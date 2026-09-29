@@ -76,6 +76,7 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
     multiKind: state.multiKind,
     aim: state.aim,
     cameraDef: derived.cameraDef,
+    nearFieldMeters: state.nearFieldMeters,
   })
   const { core } = sim
 
@@ -158,7 +159,9 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
   const vis = sim.targetVisibility
   const visText = !vis
     ? null
-    : vis.visible
+    : vis.visible && vis.nearFieldBlocks
+      ? t('vis.nearBlocks', { r: state.nearFieldMeters })
+      : vis.visible
       ? t('vis.visible', { m: fmtSigned(vis.margin, 2) })
       : t('vis.hidden', { d: ((vis.obstructionDistance ?? 0) / 1000).toFixed(1), m: fmtSigned(vis.margin, 2) })
 
@@ -220,6 +223,7 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
               pose={core.pose}
               horizon={sim.horizon}
               ridges={sim.ridges}
+              nearField={sim.nearField}
               flatHorizonAltitude={sim.flatHorizonAltitude}
               landmarkOutline={core.outline}
               target={{
@@ -244,6 +248,7 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
             <li>{terrainText}</li>
             {visText ? <li>{visText}</li> : null}
             <li>{t('honesty.ridges')}</li>
+            <li>{t('honesty.nearField', { r: state.nearFieldMeters })}</li>
             <li>{t('honesty.outline')}</li>
             <li>{t('honesty.spots')}</li>
             <li>{t('honesty.refraction')}</li>

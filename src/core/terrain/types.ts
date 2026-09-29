@@ -42,6 +42,12 @@ export interface HorizonOptions {
   readonly maxDistance: Meters
   /** Terrestrial refraction coefficient (0 = geometric). */
   readonly refractionK: number
+  /**
+   * Terrain closer than this (horizontal distance, metres) is ignored: at ~30 m DEM
+   * resolution, buildings/podiums near the camera are smoothed into false slopes.
+   * Default 0.
+   */
+  readonly nearFieldDistance?: Meters
 }
 
 export type { HorizonProfile }

@@ -23,6 +23,8 @@ export type TerrainStatus =
 
 export interface TargetVisibility {
   readonly visible: boolean
+  /** True when terrain inside the excluded near-field radius would hide a target that is visible beyond it. */
+  readonly nearFieldBlocks?: boolean
   /** Target apparent altitude minus the highest terrain in front of it, degrees. */
   readonly margin: number
   readonly obstructionDistance?: number
@@ -38,12 +40,17 @@ export interface Simulation {
   readonly horizon: { azimuth: number; altitude: number }[]
   /** Interior ridgelines (skyline excluded), nearest first. */
   readonly ridges: readonly ViewRidge[]
+  /** Max apparent angle of the ignored near-field terrain per azimuth (same azimuths as `horizon`). */
+  readonly nearField: { azimuth: number; altitude: number }[]
   readonly targetVisibility: TargetVisibility | null
   readonly flatHorizonAltitude: number
   readonly terrain: TerrainStatus
 }
 
-export type SimParams = Omit<SimInput, 'engine'>
+export type SimParams = Omit<SimInput, 'engine'> & {
+  /** Terrain within this horizontal distance of the camera is ignored, metres. */
+  readonly nearFieldMeters: number
+}
 
 const EARTH_R = 6_371_008.8
 
@@ -69,7 +76,7 @@ function publishHorizonDiagnostics(d: Record<string, unknown>): void {
 }
 
 /** Horizon terrain for the current camera/landmark: sampler cached, profile recomputed per pose (debounced). */
-function useHorizon(core: SimCore, hfov: number) {
+function useHorizon(core: SimCore, hfov: number, nearField: number) {
   const camLat = core.camera.lat
   const camLon = core.camera.lon
   const camH = core.camera.height
@@ -81,7 +88,7 @@ function useHorizon(core: SimCore, hfov: number) {
   const fovBucket = Math.ceil(hfov / 5) * 5
   const areaKey = `${camLat.toFixed(5)},${camLon.toFixed(5)}|${tgtLat.toFixed(5)},${tgtLon.toFixed(5)}|${az5}|${fovBucket}|${Math.round(dist / 1000)}`
   const [loaded, setLoaded] = useState<{ key: string; sampler: ElevationSampler | null } | null>(null)
-  const [profile, setProfile] = useState<{ key: string; samples: HorizonSample[]; ridges: RidgeLine[]; partial: boolean } | null>(null)
+  const [profile, setProfile] = useState<{ key: string; samples: HorizonSample[]; nearSamples: HorizonSample[]; ridges: RidgeLine[]; partial: boolean } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -102,7 +109,7 @@ function useHorizon(core: SimCore, hfov: number) {
 
   const sampler = loaded && loaded.key === areaKey ? loaded.sampler : null
   const poseAz = Math.round(core.pose.azimuth * 20) / 20
-  const profileKey = `${areaKey}|${poseAz}|${hfov.toFixed(3)}|${camH.toFixed(1)}`
+  const profileKey = `${areaKey}|${poseAz}|${hfov.toFixed(3)}|${camH.toFixed(1)}|nf${nearField}`
 
   useEffect(() => {
     if (!sampler) return
@@ -111,7 +118,7 @@ function useHorizon(core: SimCore, hfov: number) {
       if (cancelled) return
       try {
         const camera = { lat: deg(camLat), lon: deg(camLon), height: m(camH) }
-        const { skyline: raw, ridges } = ridgesAround(camera, sampler, poseAz, hfov, dist)
+        const { skyline: raw, nearField: nearSamples, ridges } = ridgesAround(camera, sampler, poseAz, hfov, dist, nearField)
         const maxD = dist + 3000
         const flat = seaDip(camH)
         let partial = false
@@ -121,20 +128,20 @@ function useHorizon(core: SimCore, hfov: number) {
           partial = true
           return { azimuth: h.azimuth, altitude: deg(flat) }
         })
-        publishHorizonDiagnostics({ state: 'ok', samples: samples.length, ridges: ridges.length, partial, resolution: sampler.resolutionMeters })
-        if (!cancelled) setProfile({ key: profileKey, samples, ridges, partial })
+        publishHorizonDiagnostics({ state: 'ok', samples: samples.length, ridges: ridges.length, nearField, partial, resolution: sampler.resolutionMeters })
+        if (!cancelled) setProfile({ key: profileKey, samples, nearSamples, ridges, partial })
       } catch (err) {
         // Never fail silently: an empty skyline must be explainable.
         console.error('[horizon] profile computation failed', err)
         publishHorizonDiagnostics({ state: 'error', error: String(err) })
-        if (!cancelled) setProfile({ key: profileKey, samples: [], ridges: [], partial: false })
+        if (!cancelled) setProfile({ key: profileKey, samples: [], nearSamples: [], ridges: [], partial: false })
       }
     }, DEBOUNCE_MS)
     return () => {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [sampler, profileKey, camLat, camLon, camH, poseAz, hfov, dist])
+  }, [sampler, profileKey, camLat, camLon, camH, poseAz, hfov, dist, nearField])
 
   const res = sampler ? Math.round(sampler.resolutionMeters) : 0
   const status: TerrainStatus =
@@ -148,7 +155,8 @@ function useHorizon(core: SimCore, hfov: number) {
   // Keep the last profile while a new one is computing so the skyline does not flicker.
   const samples = sampler && profile ? profile.samples : []
   const ridges = sampler && profile ? profile.ridges : []
-  return { status, samples, ridges, sampler }
+  const nearSamples = sampler && profile ? profile.nearSamples : []
+  return { status, samples, nearSamples, ridges, sampler }
 }
 
 export function useSimulation(p: SimParams): Simulation {
@@ -165,6 +173,7 @@ export function useSimulation(p: SimParams): Simulation {
     multiKind,
     aim,
     cameraDef,
+    nearFieldMeters,
   } = p
   const timeMs = time.getTime()
   const core = useMemo(
@@ -198,7 +207,7 @@ export function useSimulation(p: SimParams): Simulation {
       cameraDef,
     ],
   )
-  const { status, samples, ridges: ridgeLines, sampler } = useHorizon(core, core.fov.horizontal)
+  const { status, samples, nearSamples, ridges: ridgeLines, sampler } = useHorizon(core, core.fov.horizontal, nearFieldMeters)
   const ridges = useMemo(
     () =>
       ridgeLines.map((r) => ({
@@ -221,15 +230,32 @@ export function useSimulation(p: SimParams): Simulation {
         { lat: deg(tgtLat), lon: deg(tgtLon), height: m(tgtH) },
         sampler,
         REFRACTION_K,
+        nearFieldMeters,
       )
-      return v.obstructionDistance === undefined
-        ? { visible: v.visible, margin: v.angularMargin }
-        : { visible: v.visible, margin: v.angularMargin, obstructionDistance: v.obstructionDistance }
+      const nearFieldBlocks =
+        v.visible &&
+        nearFieldMeters > 0 &&
+        !rayVisibility(
+          { lat: deg(camLat), lon: deg(camLon), height: m(camH) },
+          { lat: deg(tgtLat), lon: deg(tgtLon), height: m(tgtH) },
+          sampler,
+          REFRACTION_K,
+        ).visible
+      return {
+        visible: v.visible,
+        margin: v.angularMargin,
+        ...(v.obstructionDistance === undefined ? {} : { obstructionDistance: v.obstructionDistance }),
+        ...(nearFieldBlocks ? { nearFieldBlocks } : {}),
+      }
     } catch (err) {
       console.error('[visibility] ray check failed', err)
       return null
     }
-  }, [sampler, camLat, camLon, camH, tgtLat, tgtLon, tgtH])
+  }, [sampler, camLat, camLon, camH, tgtLat, tgtLon, tgtH, nearFieldMeters])
+  const nearField = useMemo(
+    () => nearSamples.map((n) => ({ azimuth: n.azimuth as number, altitude: n.altitude as number })),
+    [nearSamples],
+  )
   const horizon = useMemo(
     () => samples.map((s) => ({ azimuth: s.azimuth as number, altitude: s.altitude as number })),
     [samples],
@@ -238,6 +264,7 @@ export function useSimulation(p: SimParams): Simulation {
     core,
     horizon,
     ridges,
+    nearField,
     targetVisibility,
     flatHorizonAltitude: seaDip(core.camera.height),
     terrain: status,

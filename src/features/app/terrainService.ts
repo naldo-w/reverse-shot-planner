@@ -108,9 +108,12 @@ export function loadSampler(
 export const HORIZON_STEP_DEG = 0.05
 export const HORIZON_MAX_RAYS = 900
 export const REFRACTION_K = 0.13
+/** Default radius around the camera whose terrain is ignored (DEM cannot resolve buildings/podiums), metres. */
+export const DEFAULT_NEAR_FIELD_M = 200
 
 export interface ViewRidges {
   readonly skyline: HorizonSample[]
+  readonly nearField: HorizonSample[]
   readonly ridges: RidgeLine[]
 }
 
@@ -121,6 +124,7 @@ export function ridgesAround(
   poseAzimuth: number,
   hfov: number,
   targetDistance: number,
+  nearFieldDistance = 0,
 ): ViewRidges {
   const half = hfov / 2 + 1
   const span = half * 2
@@ -132,8 +136,13 @@ export function ridgesAround(
     azimuthStep: deg(step),
     maxDistance: m(targetDistance + 3000),
     refractionK: REFRACTION_K,
+    nearFieldDistance: m(nearFieldDistance),
   })
-  return { skyline: [...result.skyline.samples], ridges: result.ridges.filter((r) => !r.isSkyline) }
+  return {
+    skyline: [...result.skyline.samples],
+    nearField: [...result.nearField.samples],
+    ridges: result.ridges.filter((r) => !r.isSkyline),
+  }
 }
 
 /** Points on the far arc of the view sector (camera + azimuth range at `distance`), for area loading. */

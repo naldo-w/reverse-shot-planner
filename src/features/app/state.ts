@@ -1,6 +1,7 @@
 import { useMemo, useReducer } from 'react'
 import { fromLocalParts, toLocalParts } from '../../core/planner'
 import type { Landmark } from '../../core/planner/types'
+import { DEFAULT_NEAR_FIELD_M } from './terrainService'
 import { DEFAULT_EYE_HEIGHT } from '../../core/planner/types'
 import type { CameraDefinition, CelestialBody, Coordinate } from '../../core/types'
 import { deg, m, mm } from '../../core/units'
@@ -28,6 +29,8 @@ export interface PlannerState {
   /** Manual ground height override (m); null = preset / terrain lookup. */
   readonly groundOverride: number | null
   readonly eyeHeight: number
+  /** Terrain closer than this to the camera is ignored for skyline/visibility, metres. */
+  readonly nearFieldMeters: number
   readonly body: CelestialBody
   /** Selected instant (UTC ms). */
   readonly timeMs: number
@@ -61,6 +64,7 @@ export function initialState(now: Date = new Date()): PlannerState {
     customSpot: { lat: spot.coordinate.lat, lon: spot.coordinate.lon },
     groundOverride: null,
     eyeHeight: DEFAULT_EYE_HEIGHT,
+    nearFieldMeters: DEFAULT_NEAR_FIELD_M,
     body: 'sun',
     timeMs: fromLocalParts({ ...parts, h: 18, mi: 0 }, lm.utcOffsetMinutes).getTime(),
     viewMode: 'single',

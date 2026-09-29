@@ -190,6 +190,15 @@ export function Controls({ t, lang, state, derived, actions, ground, geocoder, o
             max={100}
             onCommit={(eyeHeight) => actions.patch({ eyeHeight })}
           />
+          <NumField
+            label={t('field.nearField')}
+            suffix="m"
+            value={state.nearFieldMeters}
+            min={0}
+            max={1000}
+            integer
+            onCommit={(nearFieldMeters) => actions.patch({ nearFieldMeters })}
+          />
         </div>
         <p className="hint">
           {groundNote}

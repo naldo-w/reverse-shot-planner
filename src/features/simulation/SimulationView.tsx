@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactElement } from 'react'
 import type { CameraDefinition } from '../../core/types'
 import type { CameraPose } from '../../core/camera/projection'
-import { toViewBox, splitPolyline, type ViewPoint } from './projection2d'
+import { toViewBox, splitPolyline, type SkyDir, type ViewPoint } from './projection2d'
 import './SimulationView.css'
 
 type Dir = { azimuth: number; altitude: number }
@@ -12,6 +12,8 @@ export interface SimulationViewProps {
   horizon: readonly { azimuth: number; altitude: number }[]
   /** Interior ridgelines behind/below the skyline; fainter with distance (relative to the set shown). */
   ridges?: readonly { points: readonly { azimuth: number; altitude: number }[]; meanDistance: number }[]
+  /** Ignored near-field terrain; drawn dotted only where it rises above the skyline. */
+  nearField?: readonly { azimuth: number; altitude: number }[]
   /** Apparent altitude of the flat horizon (signed; a dip is negative). */
   flatHorizonAltitude: number
   landmarkOutline: readonly (readonly { azimuth: number; altitude: number }[])[]
@@ -52,7 +54,7 @@ function discRadius(d: Dir, diameter: number, pose: CameraPose, cam: CameraDefin
 }
 
 export function SimulationView(props: SimulationViewProps): ReactElement {
-  const { camera, pose, horizon, ridges, flatHorizonAltitude, landmarkOutline, target, body, tracks, ghostBodies, caption } = props
+  const { camera, pose, horizon, ridges, nearField, flatHorizonAltitude, landmarkOutline, target, body, tracks, ghostBodies, caption } = props
   const W = VIEW_W
   const H = Math.round((W * camera.sensorHeight) / camera.sensorWidth)
   const clipId = useId().replace(/:/g, '')
@@ -86,6 +88,26 @@ export function SimulationView(props: SimulationViewProps): ReactElement {
     skyline = pts
   }
   const skyRuns = splitPolyline(skyline, pose, camera, W, H)
+  // Near-field terrain that was ignored: keep only the stretches above the skyline (where it would have blocked).
+  const nearRuns: SkyDir[][] = []
+  if (nearField && horizon.length > 0) {
+    let cur: SkyDir[] = []
+    nearField.forEach((n, i) => {
+      const sky = horizon[i]
+      if (sky && n.altitude > sky.altitude && n.altitude > -89) {
+        cur.push(n)
+      } else {
+        if (cur.length >= 2) nearRuns.push(cur)
+        cur = []
+      }
+    })
+    if (cur.length >= 2) nearRuns.push(cur)
+  }
+  const nearNodes = nearRuns.flatMap((r, ri) =>
+    splitPolyline(r, pose, camera, W, H).map((run, i) => (
+      <path key={`n${ri}-${i}`} className="ln dim" vectorEffect={NS} strokeDasharray="1 4" d={pathOf(run)} />
+    )),
+  )
   const ridgeList = ridges ?? []
   const nearest = Math.min(...ridgeList.map((r) => r.meanDistance))
   const farthest = Math.max(...ridgeList.map((r) => r.meanDistance))
@@ -167,6 +189,7 @@ export function SimulationView(props: SimulationViewProps): ReactElement {
             </g>
           ))}
 
+          {nearNodes}
           {ridgeNodes}
           {skyRuns.map((r, i) => (
             <path key={`s${i}`} className="ln" vectorEffect={NS} d={pathOf(r)} />

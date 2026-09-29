@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AnalyticSampler } from '../../src/core/terrain/grid'
-import { calculateHorizonProfile } from '../../src/core/terrain/horizon'
+import { calculateHorizonProfile, rayVisibility } from '../../src/core/terrain/horizon'
 import { calculateRidgelines } from '../../src/core/terrain/ridges'
 import { haversineDistance, offsetCoordinate } from '../../src/core/geometry/geodesy'
 import { MEAN_EARTH_RADIUS } from '../../src/core/wgs84'
@@ -91,5 +91,24 @@ describe('calculateRidgelines', () => {
     const ms = performance.now() - t0
     console.log(`ridgelines: 201 azimuths x 10 km in ${ms.toFixed(0)} ms (${r.ridges.length} lines)`)
     expect(ms).toBeLessThan(400)
+  })
+
+  it('near-field exclusion: slope beside the camera hides a far hill only when not excluded', () => {
+    const hill = ridgeAt(5000, 420, 250)
+    const slope = ridgeAt(60, 40, 60) // steep rise ~60 m north of the camera
+    const s = new AnalyticSampler((lat) => Math.max(hill(lat), slope(lat)), undefined, 30)
+    const c = cam(10)
+    const o = opts(-1, 1, 0.1, 8000)
+    const withNear = calculateRidgelines(c, s, { ...o, nearFieldDistance: m(200) })
+    const without = calculateRidgelines(c, s, o)
+    const mid = (r: typeof withNear) => r.skyline.samples[Math.floor(r.skyline.samples.length / 2)]
+    expect(mid(withNear)?.distance).toBeGreaterThan(4000)
+    expect(mid(without)?.distance).toBeLessThan(200)
+    expect(mid(withNear)?.altitude).toBeCloseTo(angleTo(420, 10, 5000), 1)
+    const ignored = withNear.nearField.samples[Math.floor(withNear.nearField.samples.length / 2)]
+    expect(ignored?.altitude).toBeGreaterThan(mid(withNear)?.altitude ?? 99)
+    const target = { lat: offsetCoordinate(cam(0), 0, 5000).lat, lon: c.lon, height: m(420) }
+    expect(rayVisibility(c, target, s, 0, 200).visible).toBe(true)
+    expect(rayVisibility(c, target, s, 0).visible).toBe(false)
   })
 })

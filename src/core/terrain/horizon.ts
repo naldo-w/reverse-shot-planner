@@ -39,7 +39,8 @@ export function seaHorizonAltitude(h: number, k: number): number {
 /**
  * March one ray outward from the camera and report the apparent altitude
  * (Earth curvature via the ENU frame, plus refraction k*d/2R) and horizontal
- * distance of each terrain sample. Stops at the first sample outside coverage.
+ * distance of each terrain sample. Samples closer than `nearField` go to
+ * `visitNear` (if given) instead of `visit`. Stops at the first sample outside coverage.
  * Shared by the horizon profile and the ridgeline extraction.
  */
 export function marchRay(
@@ -51,6 +52,8 @@ export function marchRay(
   maxDistance: number,
   k: number,
   visit: (altitudeDeg: number, horizontalDistance: number) => void,
+  nearField = 0,
+  visitNear?: (altitudeDeg: number, horizontalDistance: number) => void,
 ): void {
   const res = sampler.resolutionMeters
   for (let d = START_DISTANCE; d <= maxDistance; d += rayStep(d, res)) {
@@ -60,7 +63,9 @@ export function marchRay(
     const local = frame.toLocal({ lat: c.lat, lon: c.lon, height: m(elev) })
     const horiz = Math.hypot(local.east, local.north)
     if (horiz < 1) continue
-    visit(Math.atan2(local.up, horiz) * DEG + refractionDeg(k, horiz), horiz)
+    const alt = Math.atan2(local.up, horiz) * DEG + refractionDeg(k, horiz)
+    if (horiz < nearField) visitNear?.(alt, horiz)
+    else visit(alt, horiz)
   }
 }
 
@@ -86,12 +91,22 @@ export function calculateHorizonProfile(
     let best = Number.NEGATIVE_INFINITY
     let bestDistance = 0
 
-    marchRay(frame, camera, sampler, sinAz, cosAz, opts.maxDistance, k, (alt, horiz) => {
-      if (alt > best) {
-        best = alt
-        bestDistance = horiz
-      }
-    })
+    marchRay(
+      frame,
+      camera,
+      sampler,
+      sinAz,
+      cosAz,
+      opts.maxDistance,
+      k,
+      (alt, horiz) => {
+        if (alt > best) {
+          best = alt
+          bestDistance = horiz
+        }
+      },
+      opts.nearFieldDistance ?? 0,
+    )
 
     if (best === Number.NEGATIVE_INFINITY) {
       samples.push({ azimuth: az, altitude: deg(seaLevel) })
@@ -115,6 +130,7 @@ export function rayVisibility(
   target: GeodeticPosition,
   sampler: ElevationSampler,
   k: number,
+  nearFieldDistance = 0,
 ): RayVisibility {
   const frame = new LocalFrame(camera)
   const t = frame.toLocal(target)
@@ -134,7 +150,7 @@ export function rayVisibility(
     if (elev === null) continue
     const local = frame.toLocal({ lat: c.lat, lon: c.lon, height: m(elev) })
     const horiz = Math.hypot(local.east, local.north)
-    if (horiz < 1) continue
+    if (horiz < 1 || horiz < nearFieldDistance) continue
     const alt = Math.atan2(local.up, horiz) * DEG + refractionDeg(k, horiz)
     if (alt > best) {
       best = alt

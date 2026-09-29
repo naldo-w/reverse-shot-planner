@@ -22,6 +22,9 @@
  * start new lines. Non-skyline lines under 4 points are dropped. Lines do not
  * bridge azimuth gaps, so a ridge hidden behind a nearer one for a while
  * reappears as a separate line.
+ *
+ * `nearFieldDistance` (default 0) drops samples closer than that from skyline,
+ * ridges and crest logic; their per-azimuth maximum is returned as `nearField`.
  */
 
 import { LocalFrame } from '../coordinates/enu'
@@ -50,6 +53,8 @@ export interface RidgeLine {
 
 export interface RidgelineResult {
   readonly skyline: HorizonProfile
+  /** Per-azimuth max apparent angle of the ignored near-field samples (altitude = -90 where none). */
+  readonly nearField: HorizonProfile
   readonly ridges: RidgeLine[]
 }
 
@@ -91,7 +96,9 @@ export function calculateRidgelines(
   const seaLevel = seaHorizonAltitude(camera.height, k)
   const altTol = 3 * step + prominence
 
+  const near = opts.nearFieldDistance ?? 0
   const samples: HorizonSample[] = []
+  const nearSamples: HorizonSample[] = []
   const skyPoints: Crest[] = []
   const finished: Crest[][] = []
   let open: OpenLine[] = []
@@ -105,18 +112,41 @@ export function calculateRidgelines(
     let candAlt = 0
     let candDist = 0
     let minSince = Number.POSITIVE_INFINITY
+    let nearBest = Number.NEGATIVE_INFINITY
+    let nearDist = 0
 
-    marchRay(frame, camera, sampler, sinAz, cosAz, opts.maxDistance, k, (alt, horiz) => {
-      if (!has || alt >= candAlt) {
-        if (has && candAlt - minSince >= prominence) crests.push({ az, alt: candAlt, dist: candDist })
-        has = true
-        candAlt = alt
-        candDist = horiz
-        minSince = Number.POSITIVE_INFINITY
-      } else if (alt < minSince) {
-        minSince = alt
-      }
-    })
+    marchRay(
+      frame,
+      camera,
+      sampler,
+      sinAz,
+      cosAz,
+      opts.maxDistance,
+      k,
+      (alt, horiz) => {
+        if (!has || alt >= candAlt) {
+          if (has && candAlt - minSince >= prominence) crests.push({ az, alt: candAlt, dist: candDist })
+          has = true
+          candAlt = alt
+          candDist = horiz
+          minSince = Number.POSITIVE_INFINITY
+        } else if (alt < minSince) {
+          minSince = alt
+        }
+      },
+      near,
+      (alt, horiz) => {
+        if (alt > nearBest) {
+          nearBest = alt
+          nearDist = horiz
+        }
+      },
+    )
+    nearSamples.push(
+      nearBest === Number.NEGATIVE_INFINITY
+        ? { azimuth: az, altitude: deg(-90) }
+        : { azimuth: az, altitude: deg(nearBest), distance: m(nearDist) },
+    )
 
     if (!has) {
       samples.push({ azimuth: az, altitude: deg(seaLevel) })
@@ -164,5 +194,5 @@ export function calculateRidgelines(
   const ridges: RidgeLine[] = finished.filter((l) => l.length >= MIN_RIDGE_POINTS).map((l) => toLine(l, false))
   if (skyPoints.length >= 2) ridges.push(toLine(skyPoints, true))
   ridges.sort((a, b) => a.meanDistance - b.meanDistance)
-  return { skyline: { samples }, ridges }
+  return { skyline: { samples }, nearField: { samples: nearSamples }, ridges }
 }

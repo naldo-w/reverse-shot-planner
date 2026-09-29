@@ -1,32 +1,17 @@
-# React + TypeScript + Vite
+# Reverse Shot Planner
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+> Tell it what you want to photograph. It finds where and when.
 
-Currently, two official plugins are available:
+A target-first planner: pick a landmark, choose Sun or Moon and a composition, and it searches the surrounding terrain and a date range for camera positions and times where that shot is geometrically possible. Open-source first — MapLibre, OpenStreetMap, open DEMs, no proprietary map services.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+**Status:** Phase 1 of 8 — geometry core (angles, geodesy, ECEF/ENU, camera FOV & projection) complete and tested. No UI yet.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run verify   # typecheck + lint + tests
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — layering, conventions, modules
+- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — phases and acceptance criteria
+- [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md) — open risks and accuracy analysis
+- [ATTRIBUTIONS.md](ATTRIBUTIONS.md) — dependencies, data sources, licences

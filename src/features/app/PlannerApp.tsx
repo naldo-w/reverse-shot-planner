@@ -19,10 +19,12 @@ import { getEngine, useSimulation } from './useSimulation'
 import { RISE_COLOR, SET_COLOR } from '../map/geo'
 import { Segmented } from '../controls/Segmented'
 import { SectorControls } from '../sectors/SectorControls'
-import { cellLines } from '../sectors/cellLines'
+import { AccessResults } from '../sectors/AccessResults'
+import { accessLines, cellLines } from '../sectors/cellLines'
 import { SectorLegend, SectorResults } from '../sectors/SectorResults'
-import { sectorCollection, sectorEdgesCollection } from '../sectors/sectorModel'
+import { accessCollection, sectorCollection, sectorEdgesCollection } from '../sectors/sectorModel'
 import { useSectorSearch } from '../sectors/useSectorSearch'
+import type { AccessPoint } from '../../core/search/access'
 import type { SectorCell } from '../../core/search/sectors'
 
 const MapView = lazy(() => import('../map/MapView'))
@@ -69,6 +71,8 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
     nearFieldMeters: state.nearFieldMeters,
   })
   const sectorResult = mapMode === 'sector' ? sectors.result : null
+  // Access filter ON and the result has access points: cells become dim context, points are the answer.
+  const accessResult = sectorResult && sectors.params.accessOnly ? sectorResult.access : null
   const landmarkLat = landmark.coordinate.lat
   const landmarkLon = landmark.coordinate.lon
   const sectorGeo = useMemo(
@@ -80,11 +84,15 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
               startMs: sectorResult.startMs,
               endMs: sectorResult.endMs,
               tolerance: sectorResult.tolerance,
+              dim: accessResult !== null,
             }),
             edges: sectorEdgesCollection(sectorResult.cells, { lat: landmarkLat, lon: landmarkLon }),
+            points: accessResult
+              ? accessCollection(accessResult.points, { startMs: sectorResult.startMs, endMs: sectorResult.endMs })
+              : null,
           }
         : null,
-    [sectorResult, landmarkLat, landmarkLon],
+    [sectorResult, accessResult, landmarkLat, landmarkLon],
   )
 
   const geocoder = useMemo(() => new NominatimGeocoder(() => lang), [lang])
@@ -169,6 +177,12 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
   const pickSectorCell = (cell: SectorCell) => {
     actions.setCameraPoint(cell.lat, cell.lon)
     actions.patch({ timeMs: cell.best.time.getTime(), viewMode: 'single', aim: 'target' })
+    actions.focus()
+    setMapMode('camera')
+  }
+  const pickAccessPoint = (p: AccessPoint) => {
+    actions.setCameraPoint(p.lat, p.lon)
+    actions.patch({ timeMs: p.best.time.getTime(), viewMode: 'single', aim: 'target' })
     actions.focus()
     setMapMode('camera')
   }
@@ -267,6 +281,7 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
               onBody={(body) => actions.patch({ body })}
               onRun={sectors.run}
               onCancel={sectors.cancel}
+              accessStale={sectors.result !== null && sectors.params.accessOnly && sectors.result.access === null}
             />
           ) : null}
           <div className="map-wrap">
@@ -287,12 +302,25 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
                 sectorCells={sectorGeo?.cells ?? null}
                 sectorEdges={sectorGeo?.edges ?? null}
                 sectorPopupLines={(i) => {
-                  const c = sectorResult?.cells[i]
+                  const c = accessResult ? undefined : sectorResult?.cells[i]
                   return c ? cellLines(t, c, offset) : []
                 }}
-                onSectorPick={(i) => {
-                  const c = sectorResult?.cells[i]
-                  if (c) pickSectorCell(c)
+                onSectorPick={
+                  accessResult
+                    ? undefined
+                    : (i) => {
+                        const c = sectorResult?.cells[i]
+                        if (c) pickSectorCell(c)
+                      }
+                }
+                accessPoints={sectorGeo?.points ?? null}
+                accessPopupLines={(i) => {
+                  const p = accessResult?.points[i]
+                  return p ? accessLines(t, p, offset) : []
+                }}
+                onAccessPick={(i) => {
+                  const p = accessResult?.points[i]
+                  if (p) pickAccessPoint(p)
                 }}
               />
             </Suspense>
@@ -339,6 +367,7 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
           <ul className="honesty" aria-label={t('honesty.heading')}>
             <li>{terrainText}</li>
             {mapMode === 'sector' ? <li>{t('sector.honesty')}</li> : null}
+            {mapMode === 'sector' && sectors.params.accessOnly ? <li>{t('access.honesty')}</li> : null}
             {buildingsText ? <li>{buildingsText}</li> : null}
             {visText ? <li>{visText}</li> : null}
             <li>{t(buildingsActive ? 'honesty.ridgesBuildings' : 'honesty.ridges')}</li>
@@ -353,7 +382,15 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
       </main>
 
       <div className="col-results">
-        {sectorResult ? (
+        {accessResult ? (
+          <AccessResults
+            t={t}
+            points={accessResult.points}
+            summary={accessResult.summary}
+            offsetMinutes={offset}
+            onPick={pickAccessPoint}
+          />
+        ) : sectorResult ? (
           <SectorResults t={t} result={sectorResult} offsetMinutes={offset} onPick={pickSectorCell} />
         ) : null}
         <ResultsPanel

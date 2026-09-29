@@ -8,7 +8,14 @@ import {
   type PlannerResponse,
 } from '../../core/planner/wire'
 import type { SectorCell } from '../../core/search/sectors'
-import { reviveSectorCells, serializeSectorQuery, type SectorRequestQuery } from '../../core/search/wire'
+import {
+  reviveAccess,
+  reviveSectorCells,
+  serializeSectorQuery,
+  type AccessFieldResult,
+  type AccessPhase,
+  type SectorRequestQuery,
+} from '../../core/search/wire'
 
 export interface PlannerClient {
   findAlignments(q: AlignmentQuery, engineId?: EngineId): Promise<Alignment[]>
@@ -22,6 +29,16 @@ export interface PlannerClient {
     engineId?: EngineId,
     onProgress?: (fraction: number) => void,
   ): Promise<SectorCell[]>
+  /**
+   * Access search: fan cells plus reachable, unobstructed camera points from OSM
+   * (roads, paths, parks, viewpoints) with terrain + building line of sight.
+   * Cancel by `dispose()`.
+   */
+  accessField(
+    q: SectorRequestQuery,
+    engineId?: EngineId,
+    onProgress?: (fraction: number, phase?: AccessPhase) => void,
+  ): Promise<AccessFieldResult>
   dispose(): void
 }
 
@@ -30,7 +47,7 @@ type Success = Extract<PlannerResponse, { ok: true }>
 interface Pending {
   resolve(msg: Success): void
   reject(e: Error): void
-  onProgress?: (fraction: number) => void
+  onProgress?: (fraction: number, phase?: AccessPhase) => void
 }
 
 export function createPlannerClient(): PlannerClient {
@@ -49,7 +66,7 @@ export function createPlannerClient(): PlannerClient {
     const p = pending.get(msg.id)
     if (!p) return
     if ('progress' in msg) {
-      p.onProgress?.(msg.progress)
+      p.onProgress?.(msg.progress, msg.phase)
       return
     }
     pending.delete(msg.id)
@@ -60,7 +77,7 @@ export function createPlannerClient(): PlannerClient {
 
   const send = (
     build: (id: number) => PlannerRequest,
-    onProgress?: (fraction: number) => void,
+    onProgress?: (fraction: number, phase?: AccessPhase) => void,
   ): Promise<Success> => {
     if (disposed) return Promise.reject(new Error('Planner client disposed'))
     return new Promise<Success>((resolve, reject) => {
@@ -83,6 +100,14 @@ export function createPlannerClient(): PlannerClient {
       )
       if (!('sector' in msg)) throw new Error('Unexpected planner response')
       return reviveSectorCells(msg.sector)
+    },
+    async accessField(q, engineId = DEFAULT_ENGINE_ID, onProgress) {
+      const msg = await send(
+        (id) => ({ id, type: 'accessField', engineId, query: serializeSectorQuery(q) }),
+        onProgress,
+      )
+      if (!('access' in msg)) throw new Error('Unexpected planner response')
+      return reviveAccess(msg.access)
     },
     dispose() {
       disposed = true

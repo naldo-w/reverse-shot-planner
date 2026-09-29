@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { targetPosition } from '../../core/planner'
 import type { Landmark } from '../../core/planner/types'
+import type { AccessPoint, AccessSummary } from '../../core/search/access'
 import type { SectorCell } from '../../core/search/sectors'
+import type { AccessPhase } from '../../core/search/wire'
 import type { CelestialBody } from '../../core/types'
 import { deg, m } from '../../core/units'
 import { createPlannerClient } from '../planner/plannerClient'
@@ -26,11 +28,13 @@ export interface SectorResult {
   readonly endMs: number
   readonly tolerance: number
   readonly maxKm: number
+  /** Present when the search was an access search (reachable, unobstructed points). */
+  readonly access: { readonly points: readonly AccessPoint[]; readonly summary: AccessSummary } | null
 }
 
 export type SectorStatus =
   | { readonly state: 'idle' }
-  | { readonly state: 'running'; readonly progress: number }
+  | { readonly state: 'running'; readonly progress: number; readonly phase?: AccessPhase }
   | { readonly state: 'done'; readonly result: SectorResult }
   | { readonly state: 'error'; readonly message: string }
 
@@ -73,41 +77,37 @@ export function useSectorSearch(inputs: SectorSearchInputs) {
     const c = createPlannerClient()
     client.current = c
     setStatus({ state: 'running', progress: 0 })
-    c.sectorField(
-      {
-        target: targetPosition(landmark),
-        body,
-        start,
-        end,
-        event: params.event,
-        minDistance: m(params.minKm * 1000),
-        maxDistance: m(params.maxKm * 1000),
-        eyeHeight: m(eyeHeight),
-        desiredOffset: deg(compositionOffset(params)),
-        tolerance: deg(params.tolerance),
-        visibilityLimit: VISIBILITY_CELLS,
-        nearFieldDistance: m(nearFieldMeters),
-      },
-      undefined,
-      (progress) => {
-        if (id === token.current) setStatus({ state: 'running', progress })
-      },
-    ).then(
-      (cells) => {
+    const request = {
+      target: targetPosition(landmark),
+      body,
+      start,
+      end,
+      event: params.event,
+      minDistance: m(params.minKm * 1000),
+      maxDistance: m(params.maxKm * 1000),
+      eyeHeight: m(eyeHeight),
+      desiredOffset: deg(compositionOffset(params)),
+      tolerance: deg(params.tolerance),
+      visibilityLimit: VISIBILITY_CELLS,
+      nearFieldDistance: m(nearFieldMeters),
+    }
+    const onProgress = (progress: number, phase?: AccessPhase): void => {
+      if (id === token.current) setStatus({ state: 'running', progress, ...(phase ? { phase } : {}) })
+    }
+    const base = { key, startMs: start.getTime(), endMs: end.getTime(), tolerance: params.tolerance, maxKm: params.maxKm }
+    const job: Promise<SectorResult> = params.accessOnly
+      ? c.accessField(request, undefined, onProgress).then((r) => ({
+          ...base,
+          cells: r.cells,
+          access: { points: r.points, summary: r.summary },
+        }))
+      : c.sectorField(request, undefined, onProgress).then((cells) => ({ ...base, cells, access: null }))
+    job.then(
+      (result) => {
         if (id !== token.current) return
         c.dispose()
         client.current = null
-        setStatus({
-          state: 'done',
-          result: {
-            cells,
-            key,
-            startMs: start.getTime(),
-            endMs: end.getTime(),
-            tolerance: params.tolerance,
-            maxKm: params.maxKm,
-          },
-        })
+        setStatus({ state: 'done', result })
       },
       (err: unknown) => {
         if (id !== token.current) return

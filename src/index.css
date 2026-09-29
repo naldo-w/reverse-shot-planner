@@ -312,3 +312,7 @@ button:disabled { color: var(--text-dim); cursor: default; }
 .sector-legend li { flex-wrap: wrap; }
 .sector-popup .maplibregl-popup-content { padding: 6px 8px; font-size: 12px; line-height: 1.4; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 2px; box-shadow: none; }
 .sector-popup .maplibregl-popup-tip { display: none; }
+.tbl .group-row th { padding-top: 6px; font-size: 11px; letter-spacing: 0.04em; color: var(--text); background: var(--surface-2); }
+.sector-controls .check { flex-direction: row; margin-top: 0; }
+.sector-controls .check input { width: auto; }
+.sector-controls .check > span { font-size: 13px; color: var(--text); }

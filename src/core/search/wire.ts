@@ -1,6 +1,7 @@
 /** Worker wire format for sector (fan) searches: Dates cross postMessage as ISO strings. */
 
 import type { Meters } from '../units'
+import type { AccessPoint, AccessSummary } from './access'
 import type { SectorBest, SectorCell, SectorQuery } from './sectors'
 
 /**
@@ -36,3 +37,35 @@ export const serializeSectorCells = (cells: readonly SectorCell[]): WireSectorCe
 
 export const reviveSectorCells = (cells: readonly WireSectorCell[]): SectorCell[] =>
   cells.map((c) => ({ ...c, best: { ...c.best, time: new Date(c.best.time) } }))
+
+// ------------------------------------------------------------ access field
+
+/** Result of an access (reachable + unobstructed points) search. */
+export interface AccessFieldResult {
+  /** Geometric fan cells; AccessPoint.cellRef indexes this array. */
+  readonly cells: SectorCell[]
+  readonly points: AccessPoint[]
+  readonly summary: AccessSummary
+}
+
+export type WireAccessPoint = Omit<AccessPoint, 'best'> & { best: Omit<SectorBest, 'time'> & { time: string } }
+export interface WireAccessResult {
+  readonly cells: WireSectorCell[]
+  readonly points: WireAccessPoint[]
+  readonly summary: AccessSummary
+}
+
+export const serializeAccess = (r: AccessFieldResult): WireAccessResult => ({
+  cells: serializeSectorCells(r.cells),
+  points: r.points.map((p) => ({ ...p, best: { ...p.best, time: p.best.time.toISOString() } })),
+  summary: r.summary,
+})
+
+export const reviveAccess = (r: WireAccessResult): AccessFieldResult => ({
+  cells: reviveSectorCells(r.cells),
+  points: r.points.map((p) => ({ ...p, best: { ...p.best, time: new Date(p.best.time) } })),
+  summary: r.summary,
+})
+
+/** Phases reported while an access search runs. */
+export type AccessPhase = 'geometry' | 'terrain' | 'features' | 'evaluation' | 'buildings' | 'visibility'

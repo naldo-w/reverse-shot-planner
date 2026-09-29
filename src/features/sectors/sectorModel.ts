@@ -2,6 +2,7 @@
 
 import { destinationPoint } from '../../core/geometry/geodesy'
 import { fromLocalParts, toLocalParts } from '../../core/planner'
+import type { AccessKind, AccessPoint } from '../../core/search/access'
 import { cellPolygon } from '../../core/search/sectors'
 import type { SectorCell } from '../../core/search/sectors'
 import { deg, m } from '../../core/units'
@@ -21,6 +22,8 @@ export interface SectorParams {
   readonly tolerance: 0.25 | 0.5 | 1
   readonly minKm: number
   readonly maxKm: number
+  /** Only show reachable, unobstructed points (OSM roads / paths / parks + buildings). */
+  readonly accessOnly: boolean
 }
 
 export const DEFAULT_SECTOR_PARAMS: SectorParams = {
@@ -31,6 +34,7 @@ export const DEFAULT_SECTOR_PARAMS: SectorParams = {
   tolerance: 0.5,
   minKm: 0.5,
   maxKm: 20,
+  accessOnly: true,
 }
 
 /** Sun and Moon both subtend ~0.5 deg: touching the summit from above = centre + 0.26 deg. */
@@ -90,7 +94,12 @@ export interface SectorFeatureOptions {
   readonly startMs: number
   readonly endMs: number
   readonly tolerance: number
+  /** Access mode: cells are only context (fill opacity 0.08, outline kept). */
+  readonly dim?: boolean
 }
+
+/** Fill opacity of a dimmed fan cell. */
+export const DIM_FILL_OPACITY = 0.08
 
 /** One polygon per cell. Properties: i (index in `cells`), color, opacity, h (1 = hidden by terrain). */
 export function sectorCollection(cells: readonly SectorCell[], o: SectorFeatureOptions): FeatureCollection {
@@ -102,7 +111,7 @@ export function sectorCollection(cells: readonly SectorCell[], o: SectorFeatureO
       properties: {
         i,
         color: paletteColor(span > 0 ? (c.best.time.getTime() - o.startMs) / span : 0),
-        opacity: fillOpacity(Math.abs(c.best.offsetError), o.tolerance),
+        opacity: o.dim ? DIM_FILL_OPACITY : fillOpacity(Math.abs(c.best.offsetError), o.tolerance),
         h: c.visible === false ? 1 : 0,
       },
       geometry: { type: 'Polygon', coordinates: [cellPolygon(c, o.landmark)] },
@@ -209,4 +218,43 @@ export function summarize(cells: readonly SectorCell[]): SectorSummary | null {
     d1 = Math.max(d1, c.distance)
   }
   return { count: cells.length, bearingMin: b0, bearingMax: b1, distanceMinKm: d0 / 1000, distanceMaxKm: d1 / 1000 }
+}
+
+// ------------------------------------------------------------ access points
+
+/** Circles for access points, coloured by date. Properties: p (index in `points`), color, pr (priority). */
+export function accessCollection(
+  points: readonly AccessPoint[],
+  o: { readonly startMs: number; readonly endMs: number },
+): FeatureCollection {
+  const span = o.endMs - o.startMs
+  return {
+    type: 'FeatureCollection',
+    features: points.map((pt, p) => ({
+      type: 'Feature',
+      properties: {
+        p,
+        pr: pt.priority,
+        color: paletteColor(span > 0 ? (pt.best.time.getTime() - o.startMs) / span : 0),
+      },
+      geometry: { type: 'Point', coordinates: [pt.lon, pt.lat] },
+    })),
+  }
+}
+
+/** The user-facing family of a kind: minor roads and roads share one label. */
+export type AccessFamily = 'viewpoint' | 'park' | 'path' | 'road'
+export const accessFamily = (k: AccessKind): AccessFamily => (k === 'minor-road' || k === 'road' ? 'road' : k)
+export const ACCESS_FAMILY_ORDER: readonly AccessFamily[] = ['viewpoint', 'park', 'path', 'road']
+
+export interface FamilyGroup {
+  readonly family: AccessFamily
+  readonly points: readonly AccessPoint[]
+}
+
+/** Groups (already ranked) points by family, in priority order; keeps each group's order. */
+export function groupByFamily(points: readonly AccessPoint[]): FamilyGroup[] {
+  return ACCESS_FAMILY_ORDER.map((family) => ({ family, points: points.filter((p) => accessFamily(p.kind) === family) })).filter(
+    (g) => g.points.length > 0,
+  )
 }

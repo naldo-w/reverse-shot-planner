@@ -16,6 +16,8 @@ interface SectorControlsProps {
   readonly onBody: (b: CelestialBody) => void
   readonly onRun: () => void
   readonly onCancel: () => void
+  /** A finished result exists but was computed without the access filter now selected. */
+  readonly accessStale: boolean
 }
 
 const TOLERANCES = [0.25, 0.5, 1] as const
@@ -25,6 +27,10 @@ export function SectorControls(p: SectorControlsProps) {
   const running = status.state === 'running'
   const valid = distancesValid(params)
   const pct = status.state === 'running' ? Math.round(status.progress * 100) : 0
+  const progressText =
+    status.state === 'running' && status.phase
+      ? t('sector.progressPhase', { phase: t(`sector.phase.${status.phase}`), pct })
+      : t('sector.progress', { pct })
 
   return (
     <div className="sector-controls">
@@ -115,6 +121,15 @@ export function SectorControls(p: SectorControlsProps) {
           onCommit={(maxKm) => p.onParams({ maxKm })}
         />
       </div>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={params.accessOnly}
+          onChange={(e) => p.onParams({ accessOnly: e.target.checked })}
+        />
+        <span>{t('sector.accessOnly')}</span>
+      </label>
+      {p.accessStale ? <p className="hint">{t('sector.accessStale')}</p> : null}
       {!valid ? <p className="warn-line">{t('sector.distInvalid', { min: MIN_SECTOR_KM, max: MAX_SECTOR_KM })}</p> : null}
       <div className="sector-run">
         {running ? (
@@ -128,8 +143,8 @@ export function SectorControls(p: SectorControlsProps) {
         )}
         {running ? (
           <div className="sector-progress">
-            <progress max={100} value={pct} aria-label={t('sector.progress', { pct })} />
-            <span className="hint mono">{t('sector.progress', { pct })}</span>
+            <progress max={100} value={pct} aria-label={progressText} />
+            <span className="hint mono">{progressText}</span>
           </div>
         ) : null}
       </div>

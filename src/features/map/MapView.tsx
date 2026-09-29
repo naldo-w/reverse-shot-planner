@@ -52,12 +52,16 @@ export interface MapViewProps {
   /** Hover text for cell `i` (lines); click on a cell calls onSectorPick(i). */
   readonly sectorPopupLines?: (i: number) => readonly string[]
   readonly onSectorPick?: (i: number) => void
+  /** Access points (circles with props p, color, pr = priority); hover / click work like cells and win over them. */
+  readonly accessPoints?: FeatureCollection | null
+  readonly accessPopupLines?: (i: number) => readonly string[]
+  readonly onAccessPick?: (i: number) => void
 }
 
 /** Fan-search layers, added first so markers and alignment lines draw above them. */
 function ensureSectorLayers(map: MapLibreMap): void {
   const empty: FeatureCollection = { type: 'FeatureCollection', features: [] }
-  for (const id of ['sectors', 'sector-edges']) {
+  for (const id of ['sectors', 'sector-edges', 'access-points']) {
     if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: empty as never })
   }
   const visible = ['==', ['get', 'h'], 0] as never
@@ -100,6 +104,21 @@ function ensureSectorLayers(map: MapLibreMap): void {
       type: 'line',
       source: 'sector-edges',
       paint: { 'line-color': '#8b949e', 'line-width': 1, 'line-opacity': 0.9 },
+    })
+  }
+  if (!map.getLayer('access-points')) {
+    map.addLayer({
+      id: 'access-points',
+      type: 'circle',
+      source: 'access-points',
+      paint: {
+        'circle-color': ['get', 'color'] as never,
+        // Radius by priority: viewpoint 7, park 6, path 5, minor road 4, road 3.5.
+        'circle-radius': ['match', ['get', 'pr'], 0, 7, 1, 6, 2, 5, 3, 4, 3.5] as never,
+        'circle-opacity': 0.95,
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': ['case', ['<=', ['get', 'pr'], 1], 1, 0] as never,
+      },
     })
   }
   // Near-transparent layer over every cell (including blocked ones, which have no fill) for hover and click.
@@ -266,6 +285,7 @@ export default function MapView(props: MapViewProps) {
       const none: FeatureCollection = { type: 'FeatureCollection', features: [] }
       setData(map, 'sectors', q.sectorCells ?? none)
       setData(map, 'sector-edges', q.sectorEdges ?? none)
+      setData(map, 'access-points', q.accessPoints ?? none)
     }
 
     let fellBack = false
@@ -283,27 +303,41 @@ export default function MapView(props: MapViewProps) {
       }
     })
     const popup = new Popup({ closeButton: false, closeOnClick: false, maxWidth: '280px', className: 'sector-popup' })
-    const cellAt = (point: { x: number; y: number }): number | null => {
+    type Hit = { readonly access: boolean; readonly i: number }
+    const hitAt = (point: { x: number; y: number }): Hit | null => {
+      if (map.getLayer('access-points')) {
+        const box: [[number, number], [number, number]] = [
+          [point.x - 6, point.y - 6],
+          [point.x + 6, point.y + 6],
+        ]
+        const p = map.queryRenderedFeatures(box, { layers: ['access-points'] })[0]?.properties?.['p']
+        if (typeof p === 'number') return { access: true, i: p }
+      }
       if (!map.getLayer('sector-hit')) return null
       const i = map.queryRenderedFeatures([point.x, point.y] as [number, number], { layers: ['sector-hit'] })[0]
         ?.properties?.['i']
-      return typeof i === 'number' ? i : null
+      return typeof i === 'number' ? { access: false, i } : null
     }
-    let shown: number | null = null
+    let shown: string | null = null
     map.on('mousemove', (e) => {
-      const i = cellAt(e.point)
-      const lines = i === null ? undefined : latest.current.sectorPopupLines?.(i)
-      if (!lines || lines.length === 0) {
+      const hit = hitAt(e.point)
+      const lines = !hit
+        ? undefined
+        : hit.access
+          ? latest.current.accessPopupLines?.(hit.i)
+          : latest.current.sectorPopupLines?.(hit.i)
+      if (!hit || !lines || lines.length === 0) {
         popup.remove()
         shown = null
         map.getCanvas().style.cursor = 'crosshair'
         return
       }
-      if (i === shown) {
+      const key = `${hit.access ? 'a' : 'c'}${hit.i}`
+      if (key === shown) {
         popup.setLngLat(e.lngLat)
         return
       }
-      shown = i
+      shown = key
       const box = document.createElement('div')
       lines.forEach((text, n) => {
         const row = document.createElement('div')
@@ -319,11 +353,12 @@ export default function MapView(props: MapViewProps) {
       shown = null
     })
     map.on('click', (e) => {
-      const cell = cellAt(e.point)
-      if (cell !== null && latest.current.onSectorPick) {
+      const hit = hitAt(e.point)
+      const pick = hit ? (hit.access ? latest.current.onAccessPick : latest.current.onSectorPick) : undefined
+      if (hit && pick) {
         popup.remove()
         shown = null
-        latest.current.onSectorPick(cell)
+        pick(hit.i)
         return
       }
       if (map.getLayer('spots')) {
@@ -361,7 +396,7 @@ export default function MapView(props: MapViewProps) {
   }, [])
 
   // ---- data updates
-  const { camera, landmark, spots, selectedSpotId, lines, cameraLabel, landmarkLabel, sectorCells, sectorEdges } = props
+  const { camera, landmark, spots, selectedSpotId, lines, cameraLabel, landmarkLabel, sectorCells, sectorEdges, accessPoints } = props
   useEffect(() => {
     apply.current()
   }, [
@@ -376,6 +411,7 @@ export default function MapView(props: MapViewProps) {
     landmarkLabel,
     sectorCells,
     sectorEdges,
+    accessPoints,
   ])
 
   // ---- re-frame on selection changes (not on plain map clicks)

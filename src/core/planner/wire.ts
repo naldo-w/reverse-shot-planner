@@ -1,7 +1,7 @@
 /** Worker wire format: Dates cross postMessage as ISO strings. */
 
 import type { EngineId } from '../astronomy'
-import type { WireSectorCell, WireSectorQuery } from '../search/wire'
+import type { AccessPhase, WireAccessResult, WireSectorCell, WireSectorQuery } from '../search/wire'
 import type { Alignment, AlignmentQuery } from './types'
 
 export type WireQuery = Omit<AlignmentQuery, 'start' | 'end'> & { start: string; end: string }
@@ -21,14 +21,22 @@ export interface SectorFieldRequest {
   readonly query: WireSectorQuery
 }
 
-export type PlannerRequest = AlignmentRequest | SectorFieldRequest
+export interface AccessFieldRequest {
+  readonly id: number
+  readonly type: 'accessField'
+  readonly engineId: EngineId
+  readonly query: WireSectorQuery
+}
+
+export type PlannerRequest = AlignmentRequest | SectorFieldRequest | AccessFieldRequest
 
 export type PlannerResponse =
   | { readonly id: number; readonly ok: true; readonly result: WireAlignment[] }
   | { readonly id: number; readonly ok: true; readonly sector: WireSectorCell[] }
+  | { readonly id: number; readonly ok: true; readonly access: WireAccessResult }
   | { readonly id: number; readonly ok: false; readonly error: string }
   /** Sector searches report progress 0..1 before their final response. */
-  | { readonly id: number; readonly progress: number }
+  | { readonly id: number; readonly progress: number; readonly phase?: AccessPhase }
 
 export const serializeQuery = (q: AlignmentQuery): WireQuery => ({
   ...q,

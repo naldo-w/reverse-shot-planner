@@ -335,6 +335,146 @@ export function sectorDistances(
   return { centre, inner, outer }
 }
 
+export interface CameraMatch {
+  readonly ms: number
+  /** Signed, actual - desired, degrees. */
+  readonly err: number
+  readonly az: number
+  readonly app: number
+  readonly rising: boolean
+  readonly targetApparentAltitude: number
+}
+
+/** Tracks whose azimuth band can serve a camera at `bearing` (landmark -> camera). */
+export function servingTracks(prep: PreparedSector, bearing: number): number[] {
+  const out: number[] = []
+  prep.tracks.forEach((tr, i) => {
+    if (tr.azMax - tr.azMin + 2 * BAND_MARGIN >= 360) {
+      out.push(i)
+      return
+    }
+    const centre = (tr.azMin + tr.azMax) / 2
+    const half = (tr.azMax - tr.azMin) / 2 + BAND_MARGIN
+    const diff = Math.abs(((bearing + 180 - centre + 540) % 360) - 180)
+    if (diff <= half) out.push(i)
+  })
+  return out
+}
+
+/**
+ * Step (c)-(d) for one camera: the day whose azimuth crossing has the smallest
+ * |offset error| (<= tol), or null. `camera.height` is the lens height.
+ */
+export function matchCamera(
+  q: SectorQuery,
+  prep: PreparedSector,
+  serving: readonly number[],
+  camera: GeodeticPosition,
+  tol: number,
+  k: number,
+): CameraMatch | null {
+  const desired = q.desiredOffset
+  const maxAlt = q.maxBodyAltitude ?? DEFAULT_MAX_BODY_ALTITUDE
+  const td = targetDirection(camera, q.target, k)
+  const sinT = Math.sin(td.azimuth * RAD)
+  const cosT = Math.cos(td.azimuth * RAD)
+  const phi = camera.lat * RAD
+  const lam = camera.lon * RAD
+  const sinP = Math.sin(phi)
+  const cosP = Math.cos(phi)
+  const sinL = Math.sin(lam)
+  const cosL = Math.cos(lam)
+  // Camera ENU axes in ECEF.
+  const ex = -sinL
+  const ey = cosL
+  const nx = -sinP * cosL
+  const ny = -sinP * sinL
+  const nz = cosP
+  const ux = cosP * cosL
+  const uy = cosP * sinL
+  const uz = sinP
+
+  const cross = (tr: SectorTrack, i: number): number => {
+    const e = ex * (tr.x[i] as number) + ey * (tr.y[i] as number)
+    const n = nx * (tr.x[i] as number) + ny * (tr.y[i] as number) + nz * (tr.z[i] as number)
+    return e * cosT - n * sinT
+  }
+  const ahead = (tr: SectorTrack, i: number): boolean => {
+    const e = ex * (tr.x[i] as number) + ey * (tr.y[i] as number)
+    const n = nx * (tr.x[i] as number) + ny * (tr.y[i] as number) + nz * (tr.z[i] as number)
+    return n * cosT + e * sinT > 0
+  }
+
+  const hit = { found: false, abs: tol, ms: 0, err: 0, az: 0, app: 0, rising: false }
+  const consider = (tr: SectorTrack, lo: number, s: number): void => {
+    const hi = lo + 1
+    const vx = (tr.x[lo] as number) + s * ((tr.x[hi] as number) - (tr.x[lo] as number))
+    const vy = (tr.y[lo] as number) + s * ((tr.y[hi] as number) - (tr.y[lo] as number))
+    const vz = (tr.z[lo] as number) + s * ((tr.z[hi] as number) - (tr.z[lo] as number))
+    const e = ex * vx + ey * vy
+    const n = nx * vx + ny * vy + nz * vz
+    const u = ux * vx + uy * vy + uz * vz
+    const altGeo = Math.atan2(u, Math.hypot(e, n)) * DEG
+    const g = altGeo - td.apparentAltitude - desired
+    // Apparent altitude exceeds geometric by 0..MAX_REFRACTION_LIFT in the window.
+    if (g > hit.abs || g + MAX_REFRACTION_LIFT < -hit.abs) return
+    const app = refract(deg(altGeo))
+    if (app < MIN_APPARENT || app > maxAlt) return
+    const err = app - td.apparentAltitude - desired
+    if (Math.abs(err) > hit.abs) return
+    hit.found = true
+    hit.abs = Math.abs(err)
+    hit.ms = (tr.t[lo] as number) + s * ((tr.t[hi] as number) - (tr.t[lo] as number))
+    hit.err = err
+    hit.az = normalizeAzimuth(deg(Math.atan2(e, n) * DEG))
+    hit.app = app
+    hit.rising = tr.rising
+  }
+
+  for (const ti of serving) {
+    const tr = prep.tracks[ti] as SectorTrack
+    if (tr.narrow) {
+      let lo = 0
+      let hi = tr.n - 1
+      let fLo = cross(tr, lo)
+      let fHi = cross(tr, hi)
+      if (fLo * fHi > 0 || !ahead(tr, lo) || !ahead(tr, hi)) continue
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1
+        const fm = cross(tr, mid)
+        if (fm * fLo <= 0) {
+          hi = mid
+          fHi = fm
+        } else {
+          lo = mid
+          fLo = fm
+        }
+      }
+      const den = fLo - fHi
+      consider(tr, lo, den === 0 ? 0 : fLo / den)
+    } else {
+      let fPrev = cross(tr, 0)
+      for (let i = 0; i < tr.n - 1; i++) {
+        const fNext = cross(tr, i + 1)
+        if (fPrev * fNext <= 0 && ahead(tr, i) && ahead(tr, i + 1)) {
+          const den = fPrev - fNext
+          consider(tr, i, den === 0 ? 0 : fPrev / den)
+        }
+        fPrev = fNext
+      }
+    }
+  }
+  if (!hit.found) return null
+  return {
+    ms: hit.ms,
+    err: hit.err,
+    az: hit.az,
+    app: hit.app,
+    rising: hit.rising,
+    targetApparentAltitude: td.apparentAltitude,
+  }
+}
+
 /** Evaluate (c)-(d) over the prepared fan. */
 export function evaluateSector(
   engine: CelestialEngine,
@@ -344,19 +484,9 @@ export function evaluateSector(
 ): SectorCell[] {
   const tol = q.tolerance ?? DEFAULT_TOLERANCE
   const k = q.refractionK ?? DEFAULT_REFRACTION_K
-  const desired = q.desiredOffset
   const dist = sectorDistances(q.minDistance, q.maxDistance, q.distanceSteps ?? DEFAULT_DISTANCE_STEPS)
   const cells: SectorCell[] = []
-  const illumCache = new Map<number, number>()
-  const illumination = (ms: number): number => {
-    const key = Math.round(ms / 600_000)
-    let v = illumCache.get(key)
-    if (v === undefined) {
-      v = engine.getMoonPhase(new Date(ms)).illumination
-      illumCache.set(key, v)
-    }
-    return v
-  }
+  const illumination = illuminationCache(engine)
   const tick = Math.max(1, Math.floor(prep.bearings.length / 100))
 
   for (let bi = 0; bi < prep.bearings.length; bi++) {
@@ -368,98 +498,8 @@ export function evaluateSector(
       const ground = q.groundHeight(cp.lat, cp.lon)
       if (ground === null) continue
       const camera: GeodeticPosition = { lat: cp.lat, lon: cp.lon, height: m(ground + q.eyeHeight) }
-      const td = targetDirection(camera, q.target, k)
-      const sinT = Math.sin(td.azimuth * RAD)
-      const cosT = Math.cos(td.azimuth * RAD)
-      const phi = camera.lat * RAD
-      const lam = camera.lon * RAD
-      const sinP = Math.sin(phi)
-      const cosP = Math.cos(phi)
-      const sinL = Math.sin(lam)
-      const cosL = Math.cos(lam)
-      // Camera ENU axes in ECEF.
-      const ex = -sinL
-      const ey = cosL
-      const nx = -sinP * cosL
-      const ny = -sinP * sinL
-      const nz = cosP
-      const ux = cosP * cosL
-      const uy = cosP * sinL
-      const uz = sinP
-
-      const cross = (tr: SectorTrack, i: number): number => {
-        const e = ex * (tr.x[i] as number) + ey * (tr.y[i] as number)
-        const n = nx * (tr.x[i] as number) + ny * (tr.y[i] as number) + nz * (tr.z[i] as number)
-        return e * cosT - n * sinT
-      }
-      const ahead = (tr: SectorTrack, i: number): boolean => {
-        const e = ex * (tr.x[i] as number) + ey * (tr.y[i] as number)
-        const n = nx * (tr.x[i] as number) + ny * (tr.y[i] as number) + nz * (tr.z[i] as number)
-        return n * cosT + e * sinT > 0
-      }
-
-      const hit = { found: false, abs: tol, ms: 0, err: 0, az: 0, app: 0, rising: false }
-
-      const consider = (tr: SectorTrack, lo: number, s: number): void => {
-        const hi = lo + 1
-        const vx = (tr.x[lo] as number) + s * ((tr.x[hi] as number) - (tr.x[lo] as number))
-        const vy = (tr.y[lo] as number) + s * ((tr.y[hi] as number) - (tr.y[lo] as number))
-        const vz = (tr.z[lo] as number) + s * ((tr.z[hi] as number) - (tr.z[lo] as number))
-        const e = ex * vx + ey * vy
-        const n = nx * vx + ny * vy + nz * vz
-        const u = ux * vx + uy * vy + uz * vz
-        const altGeo = Math.atan2(u, Math.hypot(e, n)) * DEG
-        const g = altGeo - td.apparentAltitude - desired
-        // Apparent altitude exceeds geometric by 0..MAX_REFRACTION_LIFT in the window.
-        if (g > hit.abs || g + MAX_REFRACTION_LIFT < -hit.abs) return
-        const app = refract(deg(altGeo))
-        if (app < MIN_APPARENT || app > (q.maxBodyAltitude ?? DEFAULT_MAX_BODY_ALTITUDE)) return
-        const err = app - td.apparentAltitude - desired
-        if (Math.abs(err) > hit.abs) return
-        hit.found = true
-        hit.abs = Math.abs(err)
-        hit.ms = (tr.t[lo] as number) + s * ((tr.t[hi] as number) - (tr.t[lo] as number))
-        hit.err = err
-        hit.az = normalizeAzimuth(deg(Math.atan2(e, n) * DEG))
-        hit.app = app
-        hit.rising = tr.rising
-      }
-
-      for (const ti of serving) {
-        const tr = prep.tracks[ti] as SectorTrack
-        if (tr.narrow) {
-          let lo = 0
-          let hi = tr.n - 1
-          let fLo = cross(tr, lo)
-          let fHi = cross(tr, hi)
-          if (fLo * fHi > 0 || !ahead(tr, lo) || !ahead(tr, hi)) continue
-          while (hi - lo > 1) {
-            const mid = (lo + hi) >> 1
-            const fm = cross(tr, mid)
-            if (fm * fLo <= 0) {
-              hi = mid
-              fHi = fm
-            } else {
-              lo = mid
-              fLo = fm
-            }
-          }
-          const den = fLo - fHi
-          consider(tr, lo, den === 0 ? 0 : fLo / den)
-        } else {
-          let fPrev = cross(tr, 0)
-          for (let i = 0; i < tr.n - 1; i++) {
-            const fNext = cross(tr, i + 1)
-            if (fPrev * fNext <= 0 && ahead(tr, i) && ahead(tr, i + 1)) {
-              const den = fPrev - fNext
-              consider(tr, i, den === 0 ? 0 : fPrev / den)
-            }
-            fPrev = fNext
-          }
-        }
-      }
-
-      if (!hit.found) continue
+      const hit = matchCamera(q, prep, serving, camera, tol, k)
+      if (!hit) continue
       cells.push({
         bearing: deg(bearing),
         distance: m(d),
@@ -475,7 +515,7 @@ export function evaluateSector(
           offsetError: deg(hit.err),
           bodyAzimuth: deg(hit.az),
           bodyApparentAltitude: deg(hit.app),
-          targetApparentAltitude: deg(td.apparentAltitude),
+          targetApparentAltitude: deg(hit.targetApparentAltitude),
           direction: hit.rising ? 'rising' : 'setting',
           ...(q.body === 'moon' ? { illumination: illumination(hit.ms) } : {}),
         },
@@ -485,6 +525,20 @@ export function evaluateSector(
   }
   onProgress?.(1)
   return cells
+}
+
+/** Moon illuminated fraction, memoised per 10 minutes. */
+export function illuminationCache(engine: CelestialEngine): (ms: number) => number {
+  const cache = new Map<number, number>()
+  return (ms) => {
+    const key = Math.round(ms / 600_000)
+    let v = cache.get(key)
+    if (v === undefined) {
+      v = engine.getMoonPhase(new Date(ms)).illumination
+      cache.set(key, v)
+    }
+    return v
+  }
 }
 
 /**

@@ -37,14 +37,16 @@ Every external dependency and data source used by Reverse Shot Planner. Update t
 | JPL DE421 planetary ephemeris (NASA/JPL), via skyfield-data | Generates `tests/fixtures/ephemeris.json` | Public domain (US Government work) |
 | IERS Earth orientation data (finals2000A), via skyfield-data | Time scales for fixtures | IERS, free use with attribution |
 
-## Data sources (planned — not yet in use)
+## Data sources
 
 | Source | Purpose | License / terms | Attribution text |
 |---|---|---|---|
-| OpenStreetMap | Base map, geocoding | ODbL 1.0 | © OpenStreetMap contributors |
-| Nominatim (public) | Geocoding, low volume only | OSMF usage policy (≤1 req/s, valid UA, caching) | Data © OpenStreetMap contributors |
-| Copernicus DEM GLO-30 | Terrain | Copernicus DEM licence (free, attribution required) — confirm in Phase 3 | © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018, provided under COPERNICUS by the European Union and ESA |
-| SRTM GL1 / NASADEM | Terrain fallback | Public domain (NASA/USGS) | NASA SRTM / NASADEM |
+| OpenStreetMap | Base map data, geocoding | ODbL 1.0 | © OpenStreetMap contributors |
+| OpenFreeMap (in use) | Vector tiles + dark/liberty styles, no key | Free service; OpenMapTiles schema (BSD/CC-BY) | OpenFreeMap © OpenMapTiles, Data © OpenStreetMap contributors |
+| AWS Terrain Tiles / Mapzen Terrarium (in use) | Terrain elevation (DTM, ~38 m at z12) | Open data, attribution required | Mapzen Terrain Tiles on AWS Open Data — SRTM/NASA, GMTED/USGS, ETOPO1/NOAA and others |
+| Nominatim (public, in use) | Geocoding, low volume only | OSMF usage policy (≤1 req/s, valid UA, caching) | Data © OpenStreetMap contributors |
+| Copernicus DEM GLO-30 (planned) | Terrain | Copernicus DEM licence (free, attribution required) — confirm in Phase 3 | © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018, provided under COPERNICUS by the European Union and ESA |
+| SRTM GL1 / NASADEM (planned) | Terrain fallback | Public domain (NASA/USGS) | NASA SRTM / NASADEM |
 
 ## Fonts and icons
 

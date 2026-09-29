@@ -12,11 +12,11 @@ export const PHASES: readonly Phase[] = [
   { id: 0, nameKey: 'phase.0', state: 'done' },
   { id: 1, nameKey: 'phase.1', state: 'done' },
   { id: 2, nameKey: 'phase.2', state: 'done' },
-  { id: 3, nameKey: 'phase.3', state: 'in-progress' },
-  { id: 4, nameKey: 'phase.4', state: 'planned' },
-  { id: 5, nameKey: 'phase.5', state: 'planned' },
-  { id: 6, nameKey: 'phase.6', state: 'planned' },
-  { id: 7, nameKey: 'phase.7', state: 'planned' },
+  { id: 3, nameKey: 'phase.3', state: 'done' },
+  { id: 4, nameKey: 'phase.4', state: 'done' },
+  { id: 5, nameKey: 'phase.5', state: 'in-progress' },
+  { id: 6, nameKey: 'phase.6', state: 'done' },
+  { id: 7, nameKey: 'phase.7', state: 'done' },
   { id: 8, nameKey: 'phase.8', state: 'planned' },
 ]
 

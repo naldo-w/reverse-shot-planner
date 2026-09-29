@@ -1,0 +1,22 @@
+.sim {
+  --sim-bg: var(--bg, #0d1117);
+  --line: var(--text, #e6edf3);
+  --line-dim: var(--text-dim, #8b949e);
+  --accent-sun: var(--accent, #d29922);
+  --accent-moon: var(--text, #e6edf3);
+  --muted: var(--text-dim, #8b949e);
+  display: block;
+  width: 100%;
+  margin: 0;
+  background: var(--sim-bg);
+  line-height: 0;
+}
+.sim svg { display: block; width: 100%; height: auto; font-family: var(--font-mono, ui-monospace, monospace); }
+.sim .ln { fill: none; stroke: var(--line); stroke-width: 1; }
+.sim .dim { stroke: var(--line-dim); }
+.sim .thirds { stroke: var(--line); opacity: 0.15; }
+.sim .sun { stroke: var(--accent-sun); }
+.sim .moon { stroke: var(--accent-moon); }
+.sim .ghost { stroke: var(--muted); }
+.sim .lbl { fill: var(--muted); stroke: none; }
+.sim .lbl-strong { fill: var(--line); stroke: none; }

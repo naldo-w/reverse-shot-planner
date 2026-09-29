@@ -60,6 +60,10 @@ The orchestrator's original 400 mm FOV expectations were wrong (5.1550°/6.1924�
 - Trusted point — Moon, topocentric airless, site 114.18°E 22.35°N h=0, 2026-10-06 06:00 UT: Horizons az 281.247717°, el 15.734218°. SunCalc 2.0.2 gives az 281.244°, apparent el 15.800° (≈ airless + 0.06° refraction, as expected at 15.8°). Azimuth agrees to 0.004°.
 - Resolved differently, per the owner's request for open-source data: fixtures are generated offline with Skyfield (MIT) and the DE421 kernel shipped in the `skyfield-data` PyPI package (the `de421` PyPI package's installer is broken on current setuptools and holds an obsolete .npy format). Reproduce: `pip install skyfield==1.55 skyfield-data==7.0.0 && python3 scripts/ephemeris/generate_fixtures.py`.
 
+## 11. Preset coordinates (open issue)
+
+Landmark coordinates are sourced (Wikipedia); shooting-spot coordinates are approximate (OSM/Nominatim/Overpass could not be queried from the build environment: permission prompt timeout, robots.txt). The Danjiang Bridge point is the bridge's published coordinate, not the surveyed pylon; at 3 km, a 200 m error is ~4° of azimuth. Cross-check with the Central Weather Administration sunset seasons: the Tamsui-side spots give pylon bearings 274–285° (consistent with CWA's Mar–Oct windows), but the Bali-side spot gives 352°, inconsistent with CWA's June window — the Bali spot and/or pylon position must be corrected on the map. Alignment results are always computed for the exact points currently set.
+
 ## 10. astronomy-engine rise/set and observer height
 
 `SearchRiseSet` derives horizon dip and air density from observer height. The contract defines events on a sea-level astronomical horizon, so the adapter searches with height 0; positions still use the real height. Terrain horizons belong to the visibility engine (Phase 4).

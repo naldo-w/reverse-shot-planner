@@ -15,7 +15,9 @@ Reverse Shot Planner 只回答一個問題：**這個太陽／月亮構圖，可
 | 建置 | Vite | 8.3 | MIT |
 | UI | React | 19.3 | MIT |
 | 地圖渲染器 | MapLibre GL JS（第 6 階段） | 6.11 | BSD-3-Clause |
-| 天文 | SunCalc，經封裝（第 2 階段） | 2.0.2 | BSD-2-Clause |
+| 天文（預設） | astronomy-engine，經封裝 | 2.1.19 | MIT |
+| 天文（替代） | SunCalc，經封裝 | 2.0.2 | BSD-2-Clause |
+| 參考星曆（ephemeris）（僅供測試） | Skyfield + JPL DE421，經由 skyfield-data（Python，離線） | 1.55 / 7.0.0 | MIT / 公有領域 |
 | 測試 | Vitest | 5.0 | MIT |
 | Lint | oxlint（隨 Vite 範本提供；沿用而不另行加入 ESLint） | 1.86 | MIT |
 
@@ -48,7 +50,7 @@ Reverse Shot Planner 只回答一個問題：**這個太陽／月亮構圖，可
 規則：
 
 1. `core/` 絕不匯入 React、MapLibre、SunCalc、`fetch` 或任何具體的 provider，因此可在純 Node 環境中測試。
-2. SunCalc 只在一個檔案中匯入（`core/astronomy/suncalcEngine.ts`，第 2 階段），並置於 `CelestialEngine` 之後。
+2. 天文函式庫只在 `core/astronomy/engines/` 內匯入，並置於 `CelestialEngine` 之後；應用程式程式碼則匯入 `core/astronomy/index.ts`。
 3. Provider 實作 `core/` 中宣告的介面；UI 負責選擇 provider，引擎負責接收。
 4. 任何 O(candidates × dates) 的運算都在 Worker 中執行。主執行緒只負責渲染，不做其他事。
 5. 模擬／示範資料只能透過明確命名的 `Mock*` provider 取得，且結果會附帶 provider 中介資料，讓 UI 能加上標示。
@@ -77,11 +79,16 @@ Reverse Shot Planner 只回答一個問題：**這個太陽／月亮構圖，可
 | `core/camera/fov.ts` | 水平／垂直／對角視野（FOV）、裁切、反推焦距 |
 | `core/camera/projection.ts` | 精確的球心投影（gnomonic projection）：方向 ↔ 正規化感光元件座標，含滾轉（roll） |
 | `data/cameraPresets.ts` | 感光元件預設值（僅為資料；引擎不依賴它們） |
+| `core/astronomy/types.ts` | `CelestialEngine` 契約：幾何（無大氣）站心位置、上緣升落事件、月相 |
+| `core/astronomy/refraction.ts` | 含溫度／氣壓的 Bennett 折射：明確套用，絕不在引擎內部處理 |
+| `core/astronomy/engines/*` | `AstronomyEngineEngine`（預設）、`SuncalcEngine` |
+| `core/astronomy/index.ts` | 引擎工廠與便利封裝函式 |
+| `tests/astronomy/conformance.ts` | 每個引擎都必須通過的共用精度測試套件，以 DE421 基準資料為準 |
 
 ## 規劃中的引擎介面
 
 ```ts
-interface CelestialEngine { getSunPosition; getMoonPosition; getSunEvents; getMoonEvents }   // Phase 2
+interface CelestialEngine { getPosition(body, t, obs); findEvents(body, obs, start, end); getMoonPhase(t) }   // Phase 2 ✅
 interface TerrainProvider { getElevation; getElevationGrid; getTile; getMetadata }           // Phase 3
 interface Geocoder { search(query): Promise<PlaceResult[]> }                                  // Phase 6
 castRay(camera, target, terrain): VisibilityResult                                            // Phase 4

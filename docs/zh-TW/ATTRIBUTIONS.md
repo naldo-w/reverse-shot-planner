@@ -10,7 +10,8 @@
 |---|---|---|---|
 | React / React DOM | UI | MIT | https://github.com/facebook/react |
 | MapLibre GL JS | 地圖渲染器（第 6 階段） | BSD-3-Clause | https://github.com/maplibre/maplibre-gl-js |
-| SunCalc | 太陽／月亮位置與事件，封裝於 `CelestialEngine` 之後 | BSD-2-Clause, © Volodymyr Agafonkin | https://github.com/mourner/suncalc |
+| astronomy-engine | 預設的太陽／月亮引擎，封裝於 `CelestialEngine` 之後 | MIT, © Don Cross | https://github.com/cosinekitty/astronomy |
+| SunCalc | 替代的太陽／月亮引擎，封裝於 `CelestialEngine` 之後 | BSD-2-Clause, © Volodymyr Agafonkin | https://github.com/mourner/suncalc |
 
 ## 開發工具
 
@@ -20,6 +21,8 @@
 | Vite, @vitejs/plugin-react | MIT |
 | Vitest | MIT |
 | oxlint | MIT |
+| Skyfield（Python，僅用於產生基準資料） | MIT |
+| skyfield-data（Python，僅用於產生基準資料） | MIT |
 
 ## 演算法（獨立實作）
 
@@ -27,6 +30,14 @@
 - Bowring, B. R. (1976). Transformation from spatial to geographical coordinates. Survey Review 23(181).
 - WGS84 參數：NIMA TR8350.2。
 - Meeus, J. *Astronomical Algorithms*（折射與視差公式，經由 SunCalc 取得）。
+- Bennett, G. G. (1982). The calculation of astronomical refraction in marine navigation. J. Navigation 35(2)：折射模型。
+
+## 參考資料（僅供測試）
+
+| Source | Use | License |
+|---|---|---|
+| JPL DE421 行星星曆（NASA/JPL），經由 skyfield-data | 產生 `tests/fixtures/ephemeris.json` | 公有領域（美國政府著作） |
+| IERS 地球自轉參數資料（finals2000A），經由 skyfield-data | 基準資料的時間系統 | IERS，註明出處即可自由使用 |
 
 ## 資料來源（規劃中，尚未使用）
 

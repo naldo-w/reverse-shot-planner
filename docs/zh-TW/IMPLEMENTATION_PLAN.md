@@ -14,15 +14,17 @@
 - 角度、大地測量、ECEF/ENU、相機視野（FOV）與球心投影（gnomonic projection）、相機預設值。
 - 114 項測試，含已發表的參考值（Vincenty 的 Flinders Peak → Buninyong）與跨模組一致性測試（`tests/geometry.integration.test.ts`）。
 
-## Phase 2 — 天文（下一階段）
-驗收標準：
+## Phase 2 — 天文 ✅
+結果：`CelestialEngine` 搭配兩個轉接器，皆通過共用的一致性測試套件；測試資料為以 Skyfield 由 JPL DE421 產生的 2,400 筆位置與 220 筆升落事件（`scripts/ephemeris/`）。預設：astronomy-engine（≤0.002°、≤2 秒）。SunCalc：≤0.014°、≤11 秒。地平線附近區段的精度另行回報。
+
+原始驗收標準：
 - `CelestialEngine` 介面 + `SuncalcEngine` 轉接器；SunCalc 不得在其他任何地方匯入。
 - 太陽／月亮位置、升落事件、月面照明比例、由距離換算的角直徑。
 - 事件以**當地**曆日計算（SunCalc 的月亮時刻使用 UTC 日；香港為 UTC+8）。
 - 以 JPL Horizons 的參考基準資料（fixtures；站心（topocentric）、無大氣*與*含大氣折射兩種）驗證，涵蓋香港與一處高緯度地點，日期橫跨 2026–2027 年數個時點。目標容差：太陽 ≤ 0.02°，月亮 ≤ 0.05°。若 SunCalc 的月亮不達標，加入 `AstronomyEngineEngine` 轉接器（astronomy-engine，MIT）並設為預設，詳見 TECHNICAL_NOTES §1。
 - 同時提供幾何（無大氣）高度角與視高度角（apparent altitude），讓對齊模型能套用一致的大氣折射政策。
 
-## Phase 3 — 地形
+## Phase 3 — 地形（下一階段）
 - `TerrainProvider` 介面、`TerrainMetadata`（DTM/DSM、解析度、基準面）。
 - 第一個真實 provider：Copernicus GLO-30，經由公開的雲端最佳化 GeoTIFF（cloud-optimised GeoTIFF）圖磚（免金鑰）；存取方式與授權於第 3 階段啟動時確認。備案：AWS Terrain Tiles（Terrarium PNG，Mapzen/Joerd，開放授權）。
 - 在型別化陣列（typed array）上做雙線性高程取樣；`MockTerrainProvider` 提供解析曲面（平面、錐形丘、山脊、牆）。

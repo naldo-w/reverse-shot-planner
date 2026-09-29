@@ -40,3 +40,9 @@ Coefficient k varies 0.07–0.25 by day/night and inversions, and is large over 
 ## 8. Test reference values
 
 The orchestrator's original 400 mm FOV expectations were wrong (5.1550°/6.1924°); exact values are H 5.1531°, D 6.1915° (2·atan(18/400), 2·atan(21.633/400)). Tests use the exact values. The Flinders→Buninyong final azimuth reference is 307°10′25.07″ (forward convention).
+
+## 9. Reference ephemeris access (Phase 2 prep)
+
+- The workspace shell cannot reach `ssd.jpl.nasa.gov` (network allowlist). Horizons is reachable through the WebFetch tool, but WebFetch caches/collapses query strings: six different queries returned identical rows. Only the first response is trusted.
+- Trusted point — Moon, topocentric airless, site 114.18°E 22.35°N h=0, 2026-10-06 06:00 UT: Horizons az 281.247717°, el 15.734218°. SunCalc 2.0.2 gives az 281.244°, apparent el 15.800° (≈ airless + 0.06° refraction, as expected at 15.8°). Azimuth agrees to 0.004°.
+- Plan: generate fixtures offline on a machine with Horizons access (script in Phase 2), commit them as JSON, and additionally cross-check against `astronomy-engine` 2.1.19 (MIT) in tests.

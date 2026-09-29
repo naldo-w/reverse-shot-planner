@@ -1,5 +1,7 @@
 # Reverse Shot Planner
 
+[繁體中文](docs/zh-TW/README.md)
+
 > Tell it what you want to photograph. It finds where and when.
 
 A target-first planner: pick a landmark, choose Sun or Moon and a composition, and it searches the surrounding terrain and a date range for camera positions and times where that shot is geometrically possible. Open-source first — MapLibre, OpenStreetMap, open DEMs, no proprietary map services.

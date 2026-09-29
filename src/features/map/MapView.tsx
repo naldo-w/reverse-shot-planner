@@ -6,8 +6,12 @@ import {
   Map as MapLibreMap,
   Marker,
   NavigationControl,
+  setWorkerUrl,
   type GeoJSONSource,
 } from 'maplibre-gl'
+// MapLibre 6 loads its worker from a sibling file that Vite does not emit on
+// its own; bundle it explicitly and hand MapLibre the resulting URL.
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import {
   alignLabelsCollection,
   alignLinesCollection,
@@ -20,6 +24,8 @@ import {
   type MapLine,
   type MapSpot,
 } from './geo'
+
+setWorkerUrl(maplibreWorkerUrl)
 
 const STYLE_DARK = 'https://tiles.openfreemap.org/styles/dark'
 const STYLE_FALLBACK = 'https://tiles.openfreemap.org/styles/liberty'

@@ -6,13 +6,13 @@
 
 import { TileGridSampler } from '../../core/terrain/grid'
 import type { DecodedTile } from '../../core/terrain/grid'
-import { decodeTerrarium, lonLatToTile, metersPerPixel, tilesForBounds } from '../../core/terrain/tiles'
+import { decodeTerrarium, despike, lonLatToTile, metersPerPixel, tilesForBounds } from '../../core/terrain/tiles'
 import type { TileId } from '../../core/terrain/tiles'
 import type { ElevationSampler, TerrainMetadata, TerrainProvider } from '../../core/terrain/types'
 import type { Bounds } from '../../core/types'
 import type { Degrees } from '../../core/units'
 
-export const CACHE_VERSION = 'v1'
+export const CACHE_VERSION = 'v2' // v2: despiked tiles
 const TILE_SIZE = 256
 const POINT_ZOOM = 13
 const MAX_CONCURRENT = 6
@@ -45,7 +45,9 @@ async function decodePngInBrowser(blob: Blob): Promise<Float32Array> {
     if (!ctx) throw new Error('2D canvas context unavailable')
     ctx.drawImage(bitmap, 0, 0)
     const img = ctx.getImageData(0, 0, TILE_SIZE, TILE_SIZE)
-    return decodeTerrarium(img.data, TILE_SIZE, TILE_SIZE)
+    const data = decodeTerrarium(img.data, TILE_SIZE, TILE_SIZE)
+    despike(data, TILE_SIZE)
+    return data
   } finally {
     bitmap.close()
   }

@@ -113,3 +113,37 @@ export function decodeTerrarium(
   }
   return out
 }
+
+/**
+ * Remove isolated single-pixel spikes/pits (data artefacts seen in Terrarium,
+ * e.g. a 2,436 m pixel near Sha Tin). A pixel differing from the median of its
+ * 8 neighbours by more than `threshold` metres is replaced by that median.
+ * Real terrain at ~35 m/pixel does not change by hundreds of metres in one pixel.
+ */
+export function despike(data: Float32Array, size: number, threshold = 250): number {
+  let fixed = 0
+  const src = data.slice()
+  const nb: number[] = []
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      nb.length = 0
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue
+          const xx = x + dx
+          const yy = y + dy
+          if (xx < 0 || yy < 0 || xx >= size || yy >= size) continue
+          nb.push(src[yy * size + xx] as number)
+        }
+      }
+      nb.sort((a, b) => a - b)
+      const med = nb[nb.length >> 1] as number
+      const i = y * size + x
+      if (Math.abs((src[i] as number) - med) > threshold) {
+        data[i] = med
+        fixed++
+      }
+    }
+  }
+  return fixed
+}

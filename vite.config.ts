@@ -7,4 +7,6 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   base: './',
   plugins: [react()],
+  // MapLibre 6 and the planner worker are ES-module workers.
+  worker: { format: 'es' },
 })

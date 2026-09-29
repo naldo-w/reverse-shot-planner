@@ -42,6 +42,15 @@ function seaDip(h: number): number {
 
 const DEBOUNCE_MS = 300
 
+/** Diagnostics readable from the browser console as `window.__rspHorizon`. */
+function publishHorizonDiagnostics(d: Record<string, unknown>): void {
+  try {
+    ;(globalThis as unknown as { __rspHorizon?: unknown }).__rspHorizon = { ...d, at: new Date().toISOString() }
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Horizon terrain for the current camera/landmark: sampler cached, profile recomputed per pose (debounced). */
 function useHorizon(core: SimCore, hfov: number) {
   const camLat = core.camera.lat
@@ -95,8 +104,12 @@ function useHorizon(core: SimCore, hfov: number) {
           partial = true
           return { azimuth: h.azimuth, altitude: deg(flat) }
         })
+        publishHorizonDiagnostics({ state: 'ok', samples: samples.length, partial, resolution: sampler.resolutionMeters })
         if (!cancelled) setProfile({ key: profileKey, samples, partial })
-      } catch {
+      } catch (err) {
+        // Never fail silently: an empty skyline must be explainable.
+        console.error('[horizon] profile computation failed', err)
+        publishHorizonDiagnostics({ state: 'error', error: String(err) })
         if (!cancelled) setProfile({ key: profileKey, samples: [], partial: false })
       }
     }, DEBOUNCE_MS)

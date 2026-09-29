@@ -63,3 +63,16 @@ describe('decodeTerrarium', () => {
     expect(out[0]).toBe(-100)
   })
 })
+
+import { despike } from '../../src/core/terrain/tiles'
+describe('despike', () => {
+  it('removes a single-pixel spike and keeps real slopes', () => {
+    const size = 8
+    const d = new Float32Array(size * size)
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) d[y * size + x] = x * 30 // 30 m/pixel slope
+    d[3 * size + 4] = 2436
+    expect(despike(d, size)).toBe(1)
+    expect(d[3 * size + 4]).toBe(120)
+    expect(d[3 * size + 6]).toBe(180)
+  })
+})

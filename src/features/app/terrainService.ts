@@ -5,7 +5,7 @@
  */
 
 import type { Bounds, GeodeticPosition, HorizonSample } from '../../core/types'
-import { calculateHorizonProfile } from '../../core/terrain/horizon'
+import { calculateRidgelines, type RidgeLine } from '../../core/terrain/ridges'
 import { MAX_TILES, tilesForBounds } from '../../core/terrain/tiles'
 import type { ElevationSampler, TerrainProvider } from '../../core/terrain/types'
 import { offsetCoordinate } from '../../core/geometry/geodesy'
@@ -38,7 +38,7 @@ export function elevationAt(lat: number, lon: number): Promise<number | null> {
 }
 
 const MARGIN_M = 2000
-const ZOOMS = [12, 11, 10, 9]
+const ZOOMS = [13, 12, 11, 10, 9]
 
 export function areaBounds(a: { lat: number; lon: number }, b: { lat: number; lon: number }): Bounds {
   return areaBoundsOf([a, b])
@@ -62,7 +62,7 @@ export function areaBoundsOf(points: readonly { lat: number; lon: number }[]): B
   }
 }
 
-/** Highest zoom ≤ 12 whose tile count stays within MAX_TILES, or null. */
+/** Highest zoom ≤ 13 (~17 m at Hong Kong) whose tile count stays within MAX_TILES, or null. */
 export function chooseZoom(bounds: Bounds): number | null {
   for (const z of ZOOMS) {
     try {
@@ -109,25 +109,31 @@ export const HORIZON_STEP_DEG = 0.05
 export const HORIZON_MAX_RAYS = 900
 export const REFRACTION_K = 0.13
 
-export function horizonAround(
+export interface ViewRidges {
+  readonly skyline: HorizonSample[]
+  readonly ridges: RidgeLine[]
+}
+
+/** Skyline plus interior ridgelines for the azimuth sector visible from `poseAzimuth`. */
+export function ridgesAround(
   camera: GeodeticPosition,
   sampler: ElevationSampler,
   poseAzimuth: number,
   hfov: number,
   targetDistance: number,
-): HorizonSample[] {
+): ViewRidges {
   const half = hfov / 2 + 1
   const span = half * 2
   const step = Math.max(HORIZON_STEP_DEG, span / HORIZON_MAX_RAYS)
   const start = (((poseAzimuth - half) % 360) + 360) % 360
-  const profile = calculateHorizonProfile(camera, sampler, {
+  const result = calculateRidgelines(camera, sampler, {
     azimuthStart: deg(start),
     azimuthEnd: deg(start + span),
     azimuthStep: deg(step),
     maxDistance: m(targetDistance + 3000),
     refractionK: REFRACTION_K,
   })
-  return [...profile.samples]
+  return { skyline: [...result.skyline.samples], ridges: result.ridges.filter((r) => !r.isSkyline) }
 }
 
 /** Points on the far arc of the view sector (camera + azimuth range at `distance`), for area loading. */

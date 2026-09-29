@@ -3,7 +3,9 @@ import { createCelestialEngine } from '../../core/astronomy'
 import type { CelestialEngine } from '../../core/astronomy'
 import type { HorizonSample } from '../../core/types'
 import { computeSimulation, type SimCore, type SimInput } from './simulation'
-import { horizonAround, loadSampler, rayLeavesGrid, REFRACTION_K, viewArcPoints } from './terrainService'
+import { loadSampler, rayLeavesGrid, REFRACTION_K, ridgesAround, viewArcPoints } from './terrainService'
+import { rayVisibility } from '../../core/terrain/horizon'
+import type { RidgeLine } from '../../core/terrain/ridges'
 import type { ElevationSampler } from '../../core/terrain/types'
 import { deg, m } from '../../core/units'
 
@@ -19,9 +21,24 @@ export type TerrainStatus =
   | { readonly state: 'partial'; readonly resolution: number }
   | { readonly state: 'unavailable' }
 
+export interface TargetVisibility {
+  readonly visible: boolean
+  /** Target apparent altitude minus the highest terrain in front of it, degrees. */
+  readonly margin: number
+  readonly obstructionDistance?: number
+}
+
+export interface ViewRidge {
+  readonly points: readonly { azimuth: number; altitude: number }[]
+  readonly meanDistance: number
+}
+
 export interface Simulation {
   readonly core: SimCore
   readonly horizon: { azimuth: number; altitude: number }[]
+  /** Interior ridgelines (skyline excluded), nearest first. */
+  readonly ridges: readonly ViewRidge[]
+  readonly targetVisibility: TargetVisibility | null
   readonly flatHorizonAltitude: number
   readonly terrain: TerrainStatus
 }
@@ -64,7 +81,7 @@ function useHorizon(core: SimCore, hfov: number) {
   const fovBucket = Math.ceil(hfov / 5) * 5
   const areaKey = `${camLat.toFixed(5)},${camLon.toFixed(5)}|${tgtLat.toFixed(5)},${tgtLon.toFixed(5)}|${az5}|${fovBucket}|${Math.round(dist / 1000)}`
   const [loaded, setLoaded] = useState<{ key: string; sampler: ElevationSampler | null } | null>(null)
-  const [profile, setProfile] = useState<{ key: string; samples: HorizonSample[]; partial: boolean } | null>(null)
+  const [profile, setProfile] = useState<{ key: string; samples: HorizonSample[]; ridges: RidgeLine[]; partial: boolean } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -94,7 +111,7 @@ function useHorizon(core: SimCore, hfov: number) {
       if (cancelled) return
       try {
         const camera = { lat: deg(camLat), lon: deg(camLon), height: m(camH) }
-        const raw = horizonAround(camera, sampler, poseAz, hfov, dist)
+        const { skyline: raw, ridges } = ridgesAround(camera, sampler, poseAz, hfov, dist)
         const maxD = dist + 3000
         const flat = seaDip(camH)
         let partial = false
@@ -104,13 +121,13 @@ function useHorizon(core: SimCore, hfov: number) {
           partial = true
           return { azimuth: h.azimuth, altitude: deg(flat) }
         })
-        publishHorizonDiagnostics({ state: 'ok', samples: samples.length, partial, resolution: sampler.resolutionMeters })
-        if (!cancelled) setProfile({ key: profileKey, samples, partial })
+        publishHorizonDiagnostics({ state: 'ok', samples: samples.length, ridges: ridges.length, partial, resolution: sampler.resolutionMeters })
+        if (!cancelled) setProfile({ key: profileKey, samples, ridges, partial })
       } catch (err) {
         // Never fail silently: an empty skyline must be explainable.
         console.error('[horizon] profile computation failed', err)
         publishHorizonDiagnostics({ state: 'error', error: String(err) })
-        if (!cancelled) setProfile({ key: profileKey, samples: [], partial: false })
+        if (!cancelled) setProfile({ key: profileKey, samples: [], ridges: [], partial: false })
       }
     }, DEBOUNCE_MS)
     return () => {
@@ -130,7 +147,8 @@ function useHorizon(core: SimCore, hfov: number) {
       : { state: 'loading' }
   // Keep the last profile while a new one is computing so the skyline does not flicker.
   const samples = sampler && profile ? profile.samples : []
-  return { status, samples }
+  const ridges = sampler && profile ? profile.ridges : []
+  return { status, samples, ridges, sampler }
 }
 
 export function useSimulation(p: SimParams): Simulation {
@@ -180,7 +198,38 @@ export function useSimulation(p: SimParams): Simulation {
       cameraDef,
     ],
   )
-  const { status, samples } = useHorizon(core, core.fov.horizontal)
+  const { status, samples, ridges: ridgeLines, sampler } = useHorizon(core, core.fov.horizontal)
+  const ridges = useMemo(
+    () =>
+      ridgeLines.map((r) => ({
+        points: r.points.map((p) => ({ azimuth: p.azimuth as number, altitude: p.altitude as number })),
+        meanDistance: r.meanDistance as number,
+      })),
+    [ridgeLines],
+  )
+  const camLat = core.camera.lat
+  const camLon = core.camera.lon
+  const camH = core.camera.height
+  const tgtLat = core.targetPos.lat
+  const tgtLon = core.targetPos.lon
+  const tgtH = core.targetPos.height
+  const targetVisibility = useMemo((): TargetVisibility | null => {
+    if (!sampler) return null
+    try {
+      const v = rayVisibility(
+        { lat: deg(camLat), lon: deg(camLon), height: m(camH) },
+        { lat: deg(tgtLat), lon: deg(tgtLon), height: m(tgtH) },
+        sampler,
+        REFRACTION_K,
+      )
+      return v.obstructionDistance === undefined
+        ? { visible: v.visible, margin: v.angularMargin }
+        : { visible: v.visible, margin: v.angularMargin, obstructionDistance: v.obstructionDistance }
+    } catch (err) {
+      console.error('[visibility] ray check failed', err)
+      return null
+    }
+  }, [sampler, camLat, camLon, camH, tgtLat, tgtLon, tgtH])
   const horizon = useMemo(
     () => samples.map((s) => ({ azimuth: s.azimuth as number, altitude: s.altitude as number })),
     [samples],
@@ -188,6 +237,8 @@ export function useSimulation(p: SimParams): Simulation {
   return {
     core,
     horizon,
+    ridges,
+    targetVisibility,
     flatHorizonAltitude: seaDip(core.camera.height),
     terrain: status,
   }

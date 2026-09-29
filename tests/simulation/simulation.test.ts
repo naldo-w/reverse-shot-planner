@@ -60,4 +60,15 @@ describe('SimulationView', () => {
     const out = renderToStaticMarkup(createElement(SimulationView, { ...demoProps, body: null, horizon: [], ghostBodies: [] }))
     expect(out).toContain('<path')
   })
+  it('draws ridgelines with opacity falling off with distance', () => {
+    const line = (alt: number, d: number) => ({
+      meanDistance: d,
+      points: [89.5, 89.8, 90.1, 90.4].map((azimuth) => ({ azimuth, altitude: alt })),
+    })
+    const out = renderToStaticMarkup(
+      createElement(SimulationView, { ...demoProps, ridges: [line(0.4, 2000), line(0.8, 6000), line(1.2, 10_000)] }),
+    )
+    const ops = [...out.matchAll(/class="ln ridge"[^>]*opacity="([\d.]+)"/g)].map((m) => Number(m[1]))
+    expect(ops).toEqual([0.85, 0.6, 0.35])
+  })
 })

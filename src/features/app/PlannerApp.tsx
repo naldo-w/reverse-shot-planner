@@ -155,6 +155,12 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
         ? t('terrain.partial')
         : t('terrain.ready', { res: sim.terrain.resolution })
       : t(`terrain.${sim.terrain.state}`)
+  const vis = sim.targetVisibility
+  const visText = !vis
+    ? null
+    : vis.visible
+      ? t('vis.visible', { m: fmtSigned(vis.margin, 2) })
+      : t('vis.hidden', { d: ((vis.obstructionDistance ?? 0) / 1000).toFixed(1), m: fmtSigned(vis.margin, 2) })
 
   return (
     <div className="planner">
@@ -203,13 +209,17 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
         <section className="pane" aria-labelledby="sim-h">
           <div className="pane-head">
             <h2 id="sim-h">{t('sim.heading')}</h2>
-            <span className="hint mono">{terrainText}</span>
+            <span className="hint mono">
+              {terrainText}
+              {visText ? ` · ${visText}` : ''}
+            </span>
           </div>
           <div className="sim-frame">
             <SimulationView
               camera={derived.cameraDef}
               pose={core.pose}
               horizon={sim.horizon}
+              ridges={sim.ridges}
               flatHorizonAltitude={sim.flatHorizonAltitude}
               landmarkOutline={core.outline}
               target={{
@@ -232,6 +242,8 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
           </p>
           <ul className="honesty" aria-label={t('honesty.heading')}>
             <li>{terrainText}</li>
+            {visText ? <li>{visText}</li> : null}
+            <li>{t('honesty.ridges')}</li>
             <li>{t('honesty.outline')}</li>
             <li>{t('honesty.spots')}</li>
             <li>{t('honesty.refraction')}</li>

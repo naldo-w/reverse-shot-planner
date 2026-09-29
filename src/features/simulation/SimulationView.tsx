@@ -10,6 +10,8 @@ export interface SimulationViewProps {
   camera: CameraDefinition
   pose: CameraPose
   horizon: readonly { azimuth: number; altitude: number }[]
+  /** Interior ridgelines behind/below the skyline; fainter with distance (relative to the set shown). */
+  ridges?: readonly { points: readonly { azimuth: number; altitude: number }[]; meanDistance: number }[]
   /** Apparent altitude of the flat horizon (signed; a dip is negative). */
   flatHorizonAltitude: number
   landmarkOutline: readonly (readonly { azimuth: number; altitude: number }[])[]
@@ -32,6 +34,8 @@ export interface SimulationViewProps {
 }
 
 const VIEW_W = 3000
+const RIDGE_OPACITY_NEAR = 0.85
+const RIDGE_OPACITY_FAR = 0.35
 const NS = 'non-scaling-stroke' as const
 const fmt = (n: number): string => n.toFixed(1)
 const pathOf = (run: readonly ViewPoint[]): string =>
@@ -48,7 +52,7 @@ function discRadius(d: Dir, diameter: number, pose: CameraPose, cam: CameraDefin
 }
 
 export function SimulationView(props: SimulationViewProps): ReactElement {
-  const { camera, pose, horizon, flatHorizonAltitude, landmarkOutline, target, body, tracks, ghostBodies, caption } = props
+  const { camera, pose, horizon, ridges, flatHorizonAltitude, landmarkOutline, target, body, tracks, ghostBodies, caption } = props
   const W = VIEW_W
   const H = Math.round((W * camera.sensorHeight) / camera.sensorWidth)
   const clipId = useId().replace(/:/g, '')
@@ -82,6 +86,16 @@ export function SimulationView(props: SimulationViewProps): ReactElement {
     skyline = pts
   }
   const skyRuns = splitPolyline(skyline, pose, camera, W, H)
+  const ridgeList = ridges ?? []
+  const nearest = Math.min(...ridgeList.map((r) => r.meanDistance))
+  const farthest = Math.max(...ridgeList.map((r) => r.meanDistance))
+  const ridgeNodes = ridgeList.flatMap((r, ri) => {
+    const t = farthest > nearest ? (r.meanDistance - nearest) / (farthest - nearest) : 0.5
+    const opacity = RIDGE_OPACITY_NEAR + (RIDGE_OPACITY_FAR - RIDGE_OPACITY_NEAR) * t
+    return splitPolyline(r.points, pose, camera, W, H).map((run, i) => (
+      <path key={`r${ri}-${i}`} className="ln ridge" vectorEffect={NS} opacity={opacity.toFixed(2)} d={pathOf(run)} />
+    ))
+  })
   const outlineRuns = landmarkOutline.flatMap((o) => splitPolyline(o, pose, camera, W, H))
 
   // Body disc
@@ -153,6 +167,7 @@ export function SimulationView(props: SimulationViewProps): ReactElement {
             </g>
           ))}
 
+          {ridgeNodes}
           {skyRuns.map((r, i) => (
             <path key={`s${i}`} className="ln" vectorEffect={NS} d={pathOf(r)} />
           ))}

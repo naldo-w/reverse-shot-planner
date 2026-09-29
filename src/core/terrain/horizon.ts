@@ -20,20 +20,48 @@ const DEG = 180 / Math.PI
 const START_DISTANCE = 30
 const TARGET_EXCLUSION = 50
 
-function rayStep(distance: number, resolution: number): number {
+export function rayStep(distance: number, resolution: number): number {
   return Math.max(resolution / 2, distance * 0.002)
 }
 
 /** Refraction lift of an object at horizontal distance d, degrees. */
-function refractionDeg(k: number, d: number): number {
+export function refractionDeg(k: number, d: number): number {
   return ((k * d) / (2 * MEAN_EARTH_RADIUS)) * DEG
 }
 
 /** Sea-level horizon (geometric dip plus refraction at the horizon distance), degrees. */
-function seaHorizonAltitude(h: number, k: number): number {
+export function seaHorizonAltitude(h: number, k: number): number {
   const height = Math.max(0, h)
   const gamma = Math.acos(MEAN_EARTH_RADIUS / (MEAN_EARTH_RADIUS + height))
   return -gamma * DEG + refractionDeg(k, gamma * MEAN_EARTH_RADIUS)
+}
+
+/**
+ * March one ray outward from the camera and report the apparent altitude
+ * (Earth curvature via the ENU frame, plus refraction k*d/2R) and horizontal
+ * distance of each terrain sample. Stops at the first sample outside coverage.
+ * Shared by the horizon profile and the ridgeline extraction.
+ */
+export function marchRay(
+  frame: LocalFrame,
+  origin: { readonly lat: number; readonly lon: number },
+  sampler: ElevationSampler,
+  sinAz: number,
+  cosAz: number,
+  maxDistance: number,
+  k: number,
+  visit: (altitudeDeg: number, horizontalDistance: number) => void,
+): void {
+  const res = sampler.resolutionMeters
+  for (let d = START_DISTANCE; d <= maxDistance; d += rayStep(d, res)) {
+    const c = offsetCoordinate({ lat: deg(origin.lat), lon: deg(origin.lon) }, m(d * sinAz), m(d * cosAz))
+    const elev = sampler.sample(c.lat, c.lon)
+    if (elev === null) break
+    const local = frame.toLocal({ lat: c.lat, lon: c.lon, height: m(elev) })
+    const horiz = Math.hypot(local.east, local.north)
+    if (horiz < 1) continue
+    visit(Math.atan2(local.up, horiz) * DEG + refractionDeg(k, horiz), horiz)
+  }
 }
 
 export function calculateHorizonProfile(
@@ -47,7 +75,6 @@ export function calculateHorizonProfile(
   const span = opts.azimuthEnd - opts.azimuthStart
   const sweep = span >= 0 ? span : ((span % 360) + 360) % 360
   const count = Math.floor(sweep / step + 1e-9) + 1
-  const res = sampler.resolutionMeters
   const k = opts.refractionK
   const seaLevel = seaHorizonAltitude(camera.height, k)
   const samples: HorizonSample[] = []
@@ -59,19 +86,12 @@ export function calculateHorizonProfile(
     let best = Number.NEGATIVE_INFINITY
     let bestDistance = 0
 
-    for (let d = START_DISTANCE; d <= opts.maxDistance; d += rayStep(d, res)) {
-      const c = offsetCoordinate({ lat: camera.lat, lon: camera.lon }, d * sinAz, d * cosAz)
-      const elev = sampler.sample(c.lat, c.lon)
-      if (elev === null) break
-      const local = frame.toLocal({ lat: c.lat, lon: c.lon, height: m(elev) })
-      const horiz = Math.hypot(local.east, local.north)
-      if (horiz < 1) continue
-      const alt = Math.atan2(local.up, horiz) * DEG + refractionDeg(k, horiz)
+    marchRay(frame, camera, sampler, sinAz, cosAz, opts.maxDistance, k, (alt, horiz) => {
       if (alt > best) {
         best = alt
         bestDistance = horiz
       }
-    }
+    })
 
     if (best === Number.NEGATIVE_INFINITY) {
       samples.push({ azimuth: az, altitude: deg(seaLevel) })

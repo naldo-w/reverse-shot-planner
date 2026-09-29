@@ -24,26 +24,41 @@
 - 以 JPL Horizons 的參考基準資料（fixtures；站心（topocentric）、無大氣*與*含大氣折射兩種）驗證，涵蓋香港與一處高緯度地點，日期橫跨 2026–2027 年數個時點。目標容差：太陽 ≤ 0.02°，月亮 ≤ 0.05°。若 SunCalc 的月亮不達標，加入 `AstronomyEngineEngine` 轉接器（astronomy-engine，MIT）並設為預設，詳見 TECHNICAL_NOTES §1。
 - 同時提供幾何（無大氣）高度角與視高度角（apparent altitude），讓對齊模型能套用一致的大氣折射政策。
 
-## Phase 3 — 地形（下一階段）
+## Phase 3 — 地形 ✅
+已交付：`TerrariumProvider`（AWS Open Data Terrain Tiles，z12 時約 38 m，IndexedDB + 記憶體快取）、`TileGridSampler`（雙線性）、供測試用的 `MockTerrainProvider`。Copernicus GLO-30 仍為規劃中的替代 provider。
+
+原始規劃：
 - `TerrainProvider` 介面、`TerrainMetadata`（DTM/DSM、解析度、基準面）。
 - 第一個真實 provider：Copernicus GLO-30，經由公開的雲端最佳化 GeoTIFF（cloud-optimised GeoTIFF）圖磚（免金鑰）；存取方式與授權於第 3 階段啟動時確認。備案：AWS Terrain Tiles（Terrarium PNG，Mapzen/Joerd，開放授權）。
 - 在型別化陣列（typed array）上做雙線性高程取樣；`MockTerrainProvider` 提供解析曲面（平面、錐形丘、山脊、牆）。
 - IndexedDB 圖磚快取，以 `provider/dataset/z/x/y` + 快取版本為鍵。
 
-## Phase 4 — 可見性
+## Phase 4 — 可見性 ✅
+已交付：`calculateHorizonProfile`（曲率 + 地面大氣折射 k）與 `rayVisibility`，並以合成的平面／丘陵／山脊／障礙物地形測試。
+
+原始規劃：
 - 使用 `LocalFrame` 在 ENU 中做射線投射（ray casting），曲率已隱含，地面大氣折射係數 k 作為參數。
 - `calculateHorizonProfile`（0.1° 步進）：先寫合成地形測試。
 - 附角度餘裕的 `VisibilityResult`。
 
-## Phase 5 — 反向搜尋（Worker）
+## Phase 5 — 反向搜尋（Worker）— 進行中
+先行交付：地點優先模式（規格 §27）：於 Web Worker 中執行 `findAlignments`（366 天 < 1 秒）、每日升落、單日／多日軌跡、地圖對齊線。尚餘：以候選網格涵蓋整個區域的目標優先搜尋。
+
+原始規劃：
 - 半徑內的候選網格，由粗到細再分割。
 - 每個候選點：目標視角（靜態）→ 在升落時間窗內迴圈掃描日期 → 對對齊誤差做黃金分割（golden-section）時間精修 → 目標與天體的可見性 → 透明的 `AlignmentScore`。
 - 剪枝：只有當目標方位角落在該緯度下天體全年升落方位角帶內時，候選點才可能對齊；先計算一次該方位角帶，在進入任何日期迴圈前捨棄其餘候選點。
 
-## Phase 6 — 地圖 UI
+## Phase 6 — 地圖 UI ✅（v1）
+MapLibre + OpenFreeMap（OSM 資料）、點擊設定相機／地標、預設地點、對齊線、Nominatim 搜尋（節流、快取）。
+
+原始規劃：
 MapLibre、OSM 點陣圖／向量樣式、地形來源，目標可由點擊／座標／地理編碼器指定（節流的 Nominatim，含快取），半徑疊加層，候選點作為 GeoJSON 圖層，結果清單 ↔ 地圖連動。深色儀器風格 UI。
 
-## Phase 7 — 相機模擬
+## Phase 7 — 相機模擬 ✅（v1）
+以精確的球心投影（gnomonic projection）繪製 1px 線框 SVG 取景框：地形天際線、示意的結構輪廓、依比例繪製的太陽／月亮、單日與多日路徑、1° 比例尺。
+
+原始規劃：
 Canvas 視埠：地平線剖面（horizon profile）、目標剪影、依比例繪製的天體圓盤、天體軌跡、FOV 取景框。
 
 ## Phase 8 — UX 打磨

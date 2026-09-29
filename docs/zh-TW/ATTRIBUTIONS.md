@@ -39,14 +39,16 @@
 | JPL DE421 行星星曆（NASA/JPL），經由 skyfield-data | 產生 `tests/fixtures/ephemeris.json` | 公有領域（美國政府著作） |
 | IERS 地球自轉參數資料（finals2000A），經由 skyfield-data | 基準資料的時間系統 | IERS，註明出處即可自由使用 |
 
-## 資料來源（規劃中，尚未使用）
+## 資料來源
 
 | Source | Purpose | License / terms | Attribution text |
 |---|---|---|---|
-| OpenStreetMap | 底圖、地理編碼 | ODbL 1.0 | © OpenStreetMap contributors |
-| Nominatim (public) | 地理編碼，僅限低用量 | OSMF 使用政策（≤1 req/s、有效的 UA、快取） | Data © OpenStreetMap contributors |
-| Copernicus DEM GLO-30 | 地形 | Copernicus DEM 授權（免費，須標示出處）；於第 3 階段確認 | © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018, provided under COPERNICUS by the European Union and ESA |
-| SRTM GL1 / NASADEM | 地形備援 | 公有領域（NASA/USGS） | NASA SRTM / NASADEM |
+| OpenStreetMap | 底圖資料、地理編碼 | ODbL 1.0 | © OpenStreetMap contributors |
+| OpenFreeMap (in use) | 向量圖磚 + dark/liberty 樣式，免金鑰 | 免費服務；OpenMapTiles schema（BSD/CC-BY） | OpenFreeMap © OpenMapTiles, Data © OpenStreetMap contributors |
+| AWS Terrain Tiles / Mapzen Terrarium (in use) | 地形高程（DTM，z12 時約 38 m） | 開放資料，須標示出處 | Mapzen Terrain Tiles on AWS Open Data — SRTM/NASA, GMTED/USGS, ETOPO1/NOAA and others |
+| Nominatim (public, in use) | 地理編碼，僅限低用量 | OSMF 使用政策（≤1 req/s、有效的 UA、快取） | Data © OpenStreetMap contributors |
+| Copernicus DEM GLO-30 (planned) | 地形 | Copernicus DEM 授權（免費，須標示出處）；於第 3 階段確認 | © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018, provided under COPERNICUS by the European Union and ESA |
+| SRTM GL1 / NASADEM (planned) | 地形備援 | 公有領域（NASA/USGS） | NASA SRTM / NASADEM |
 
 ## 字型與圖示
 

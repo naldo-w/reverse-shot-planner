@@ -67,3 +67,10 @@ Landmark coordinates are sourced (Wikipedia); shooting-spot coordinates are appr
 ## 10. astronomy-engine rise/set and observer height
 
 `SearchRiseSet` derives horizon dip and air density from observer height. The contract defines events on a sea-level astronomical horizon, so the adapter searches with height 0; positions still use the real height. Terrain horizons belong to the visibility engine (Phase 4).
+
+## Buildings (OSM) in the terrain surface
+
+- Source: OpenFreeMap vector tiles (TileJSON `https://tiles.openfreemap.org/planet`), z14 layer `building`, `render_height` / `render_min_height`. OpenMapTiles fills defaults where OSM has no height or levels, so heights are partly estimated; unmapped buildings are absent; trees are not modelled.
+- `BuildingSurfaceSampler` (core/terrain/composite.ts) = terrain at the query point + tallest containing footprint (solid column; `minHeight` ignored). Roofs on slopes follow the local terrain.
+- Near-field: bare terrain within the near-field radius is replaced by the camera's ground height; buildings are kept at every distance. Sampler resolution is min(terrain, 5 m), so `marchRay` steps 2.5 m near the camera and `0.002·d` beyond 1.25 km.
+- Tile cap 64: beyond that, tiles within 3 km of the camera and within 1 km of the camera→landmark line are kept (nearest first if still over).

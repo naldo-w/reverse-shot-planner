@@ -10,6 +10,8 @@ import { MAX_TILES, tilesForBounds } from '../../core/terrain/tiles'
 import type { ElevationSampler, TerrainProvider } from '../../core/terrain/types'
 import { offsetCoordinate } from '../../core/geometry/geodesy'
 import { deg, m } from '../../core/units'
+import { BuildingIndex } from '../../core/terrain/composite'
+import { loadBuildingsDetailed } from '../../providers/buildings/openFreeMapBuildings'
 import { TerrariumProvider } from '../../providers/terrain/terrariumProvider'
 
 let provider: TerrainProvider | null = null
@@ -101,6 +103,51 @@ export function loadSampler(
     const oldest = samplerCache.keys().next().value
     if (oldest === undefined) break
     samplerCache.delete(oldest)
+  }
+  return p
+}
+
+/** Buildings for one view area, indexed for sampling. */
+export interface BuildingSet {
+  readonly index: BuildingIndex
+  readonly count: number
+  /** True when tiles were restricted (cap) or some tiles failed: coverage is incomplete. */
+  readonly partial: boolean
+}
+
+const buildingCache = new Map<string, Promise<BuildingSet | null>>()
+
+/**
+ * OSM buildings (OpenFreeMap) for the same area as the terrain sampler. Cached per
+ * area key; tile bytes are additionally cached inside the provider. Resolves null when unavailable.
+ */
+export function loadBuildingSet(
+  camera: { lat: number; lon: number },
+  target: { lat: number; lon: number },
+  extra: readonly { lat: number; lon: number }[] = [],
+  extraKey = '',
+): Promise<BuildingSet | null> {
+  const key = `${camera.lat.toFixed(5)},${camera.lon.toFixed(5)}|${target.lat.toFixed(5)},${target.lon.toFixed(5)}|${extraKey}`
+  const hit = buildingCache.get(key)
+  if (hit) return hit
+  const bounds = areaBoundsOf([camera, target, ...extra])
+  const p: Promise<BuildingSet | null> = loadBuildingsDetailed(bounds, { camera, landmark: target })
+    .then((r) => {
+      const index = new BuildingIndex(r.buildings)
+      return { index, count: index.count, partial: r.restricted || r.tilesFailed > 0 }
+    })
+    .catch((err: unknown) => {
+      console.warn('[buildings] load failed', err)
+      return null
+    })
+  buildingCache.set(key, p)
+  void p.then((v) => {
+    if (v === null) buildingCache.delete(key)
+  })
+  while (buildingCache.size > 4) {
+    const oldest = buildingCache.keys().next().value
+    if (oldest === undefined) break
+    buildingCache.delete(oldest)
   }
   return p
 }

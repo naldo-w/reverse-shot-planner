@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import type { Lang, Translate } from '../../app/i18n'
 import { dailyEvents } from '../../core/planner'
 import type { Alignment, DailyEvents } from '../../core/planner/types'
@@ -17,6 +17,13 @@ import { useAlignLines, useAlignmentFinder, useSpotRecommendations } from './use
 import { useGroundHeight } from './useGroundHeight'
 import { getEngine, useSimulation } from './useSimulation'
 import { RISE_COLOR, SET_COLOR } from '../map/geo'
+import { Segmented } from '../controls/Segmented'
+import { SectorControls } from '../sectors/SectorControls'
+import { cellLines } from '../sectors/cellLines'
+import { SectorLegend, SectorResults } from '../sectors/SectorResults'
+import { sectorCollection, sectorEdgesCollection } from '../sectors/sectorModel'
+import { useSectorSearch } from '../sectors/useSectorSearch'
+import type { SectorCell } from '../../core/search/sectors'
 
 const MapView = lazy(() => import('../map/MapView'))
 
@@ -53,6 +60,32 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
   const derived = useDerived(state)
   const { landmark, offset } = derived
   const time = useMemo(() => new Date(state.timeMs), [state.timeMs])
+  const [mapMode, setMapMode] = useState<'camera' | 'sector'>('camera')
+  const sectors = useSectorSearch({
+    landmark,
+    body: state.body,
+    timeMs: state.timeMs,
+    eyeHeight: state.eyeHeight,
+    nearFieldMeters: state.nearFieldMeters,
+  })
+  const sectorResult = mapMode === 'sector' ? sectors.result : null
+  const landmarkLat = landmark.coordinate.lat
+  const landmarkLon = landmark.coordinate.lon
+  const sectorGeo = useMemo(
+    () =>
+      sectorResult
+        ? {
+            cells: sectorCollection(sectorResult.cells, {
+              landmark: { lat: landmarkLat, lon: landmarkLon },
+              startMs: sectorResult.startMs,
+              endMs: sectorResult.endMs,
+              tolerance: sectorResult.tolerance,
+            }),
+            edges: sectorEdgesCollection(sectorResult.cells, { lat: landmarkLat, lon: landmarkLon }),
+          }
+        : null,
+    [sectorResult, landmarkLat, landmarkLon],
+  )
 
   const geocoder = useMemo(() => new NominatimGeocoder(() => lang), [lang])
 
@@ -77,6 +110,7 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
     aim: state.aim,
     cameraDef: derived.cameraDef,
     nearFieldMeters: state.nearFieldMeters,
+    useBuildings: state.useBuildings,
   })
   const { core } = sim
 
@@ -127,6 +161,17 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
     if (state.clickMode === 'camera') actions.setCameraPoint(lat, lon)
     else setLandmarkAt(lat, lon)
   }
+  // In fan mode a plain click must not move the camera; cells and the landmark mode still work.
+  const handlePlainMapClick = (lat: number, lon: number) => {
+    if (mapMode === 'sector' && state.clickMode === 'camera') return
+    handleMapClick(lat, lon)
+  }
+  const pickSectorCell = (cell: SectorCell) => {
+    actions.setCameraPoint(cell.lat, cell.lon)
+    actions.patch({ timeMs: cell.best.time.getTime(), viewMode: 'single', aim: 'target' })
+    actions.focus()
+    setMapMode('camera')
+  }
   const handlePlace = (place: PlaceResult) => {
     handleMapClick(place.lat, place.lon)
     actions.focus()
@@ -163,7 +208,18 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
       ? t('vis.nearBlocks', { r: state.nearFieldMeters })
       : vis.visible
       ? t('vis.visible', { m: fmtSigned(vis.margin, 2) })
-      : t('vis.hidden', { d: ((vis.obstructionDistance ?? 0) / 1000).toFixed(1), m: fmtSigned(vis.margin, 2) })
+      : vis.obstructionKind === 'building'
+        ? t('vis.hiddenBuilding', { d: ((vis.obstructionDistance ?? 0) / 1000).toFixed(2), m: fmtSigned(vis.margin, 2) })
+        : t('vis.hidden', { d: ((vis.obstructionDistance ?? 0) / 1000).toFixed(1), m: fmtSigned(vis.margin, 2) })
+  const bs = sim.buildings
+  const buildingsText =
+    bs.state === 'off'
+      ? null
+      : bs.state === 'ready'
+        ? t('buildings.ready', { n: bs.count.toLocaleString(lang === 'zh-TW' ? 'zh-TW' : 'en-US') }) +
+          (bs.partial ? ` ${t('buildings.partial')}` : '')
+        : t(`buildings.${bs.state}`)
+  const buildingsActive = bs.state === 'ready'
 
   return (
     <div className="planner">
@@ -184,10 +240,35 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
         <section className="pane" aria-labelledby="map-h">
           <div className="pane-head">
             <h2 id="map-h">{t('map.heading')}</h2>
+            <Segmented
+              label={t('map.mode.label')}
+              value={mapMode}
+              options={[
+                { id: 'camera', label: t('map.mode.camera') },
+                { id: 'sector', label: t('map.mode.sector') },
+              ]}
+              onChange={setMapMode}
+            />
             <span className="hint">
-              {state.clickMode === 'camera' ? t('map.clickCamera') : t('map.clickLandmark')}
+              {mapMode === 'sector'
+                ? t('sector.hintMap')
+                : state.clickMode === 'camera'
+                  ? t('map.clickCamera')
+                  : t('map.clickLandmark')}
             </span>
           </div>
+          {mapMode === 'sector' ? (
+            <SectorControls
+              t={t}
+              params={sectors.params}
+              body={state.body}
+              status={sectors.status}
+              onParams={sectors.patch}
+              onBody={(body) => actions.patch({ body })}
+              onRun={sectors.run}
+              onCancel={sectors.cancel}
+            />
+          ) : null}
           <div className="map-wrap">
             <Suspense fallback={<div className="map-host map-loading">{t('map.loading')}</div>}>
               <MapView
@@ -199,13 +280,24 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
                 selectedSpotId={state.spotId}
                 lines={mapLines}
                 focusSeq={state.focusSeq}
-                onClickPoint={handleMapClick}
+                onClickPoint={handlePlainMapClick}
                 onSelectSpot={actions.selectSpot}
                 onMoveCamera={actions.setCameraPoint}
                 onMoveLandmark={setLandmarkAt}
+                sectorCells={sectorGeo?.cells ?? null}
+                sectorEdges={sectorGeo?.edges ?? null}
+                sectorPopupLines={(i) => {
+                  const c = sectorResult?.cells[i]
+                  return c ? cellLines(t, c, offset) : []
+                }}
+                onSectorPick={(i) => {
+                  const c = sectorResult?.cells[i]
+                  if (c) pickSectorCell(c)
+                }}
               />
             </Suspense>
           </div>
+          {sectorResult ? <SectorLegend t={t} result={sectorResult} offsetMinutes={offset} /> : null}
           <MapLegend t={t} />
         </section>
 
@@ -246,9 +338,12 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
           </p>
           <ul className="honesty" aria-label={t('honesty.heading')}>
             <li>{terrainText}</li>
+            {mapMode === 'sector' ? <li>{t('sector.honesty')}</li> : null}
+            {buildingsText ? <li>{buildingsText}</li> : null}
             {visText ? <li>{visText}</li> : null}
-            <li>{t('honesty.ridges')}</li>
-            <li>{t('honesty.nearField', { r: state.nearFieldMeters })}</li>
+            <li>{t(buildingsActive ? 'honesty.ridgesBuildings' : 'honesty.ridges')}</li>
+            <li>{t(buildingsActive ? 'honesty.nearFieldBuildings' : 'honesty.nearField', { r: state.nearFieldMeters })}</li>
+            {buildingsActive ? <li>{t('honesty.buildings')}</li> : null}
             <li>{t('honesty.outline')}</li>
             <li>{t('honesty.spots')}</li>
             <li>{t('honesty.refraction')}</li>
@@ -258,6 +353,9 @@ export function PlannerApp({ lang, t }: PlannerAppProps) {
       </main>
 
       <div className="col-results">
+        {sectorResult ? (
+          <SectorResults t={t} result={sectorResult} offsetMinutes={offset} onPick={pickSectorCell} />
+        ) : null}
         <ResultsPanel
           t={t}
           offset={offset}

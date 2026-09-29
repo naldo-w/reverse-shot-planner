@@ -31,6 +31,8 @@ export interface PlannerState {
   readonly eyeHeight: number
   /** Terrain closer than this to the camera is ignored for skyline/visibility, metres. */
   readonly nearFieldMeters: number
+  /** Include OSM buildings (OpenFreeMap) in skyline and landmark visibility. */
+  readonly useBuildings: boolean
   readonly body: CelestialBody
   /** Selected instant (UTC ms). */
   readonly timeMs: number
@@ -65,6 +67,7 @@ export function initialState(now: Date = new Date()): PlannerState {
     groundOverride: null,
     eyeHeight: DEFAULT_EYE_HEIGHT,
     nearFieldMeters: DEFAULT_NEAR_FIELD_M,
+    useBuildings: true,
     body: 'sun',
     timeMs: fromLocalParts({ ...parts, h: 18, mi: 0 }, lm.utcOffsetMinutes).getTime(),
     viewMode: 'single',

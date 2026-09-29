@@ -24,7 +24,11 @@ export interface ElevationSampler {
   readonly bounds: Bounds
   readonly resolutionMeters: number
   sample(lat: Degrees, lon: Degrees): number | null
+  /** Optional: what the surface at a point is, so visibility results can name the obstruction. */
+  surfaceKindAt?(lat: Degrees, lon: Degrees): SurfaceKind
 }
+
+export type SurfaceKind = 'terrain' | 'building'
 
 export interface TerrainProvider {
   getMetadata(): TerrainMetadata

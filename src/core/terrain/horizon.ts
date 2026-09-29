@@ -13,7 +13,7 @@ import { offsetCoordinate } from '../geometry/geodesy'
 import type { GeodeticPosition, HorizonProfile, HorizonSample } from '../types'
 import { MEAN_EARTH_RADIUS } from '../wgs84'
 import { deg, m } from '../units'
-import type { ElevationSampler, HorizonOptions } from './types'
+import type { ElevationSampler, HorizonOptions, SurfaceKind } from './types'
 
 const RAD = Math.PI / 180
 const DEG = 180 / Math.PI
@@ -121,6 +121,8 @@ export interface RayVisibility {
   readonly visible: boolean
   readonly obstructionDistance?: number
   readonly obstructionElevation?: number
+  /** What the limiting surface is, when the sampler can tell (composite building sampler). */
+  readonly obstructionKind?: SurfaceKind
   /** Target apparent altitude minus max terrain apparent altitude before it, degrees. */
   readonly angularMargin: number
 }
@@ -144,6 +146,8 @@ export function rayVisibility(
   let best = Number.NEGATIVE_INFINITY
   let bestDistance = 0
   let bestElev = 0
+  let bestLat = camera.lat as number
+  let bestLon = camera.lon as number
   for (let d = START_DISTANCE; d <= limit; d += rayStep(d, res)) {
     const c = offsetCoordinate({ lat: camera.lat, lon: camera.lon }, d * ux, d * uy)
     const elev = sampler.sample(c.lat, c.lon)
@@ -156,6 +160,8 @@ export function rayVisibility(
       best = alt
       bestDistance = horiz
       bestElev = elev
+      bestLat = c.lat
+      bestLon = c.lon
     }
   }
 
@@ -168,6 +174,9 @@ export function rayVisibility(
     visible: false,
     obstructionDistance: bestDistance,
     obstructionElevation: bestElev,
+    ...(sampler.surfaceKindAt
+      ? { obstructionKind: sampler.surfaceKindAt(deg(bestLat), deg(bestLon)) }
+      : {}),
     angularMargin: margin,
   }
 }

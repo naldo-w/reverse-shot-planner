@@ -200,6 +200,14 @@ export function Controls({ t, lang, state, derived, actions, ground, geocoder, o
             onCommit={(nearFieldMeters) => actions.patch({ nearFieldMeters })}
           />
         </div>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={state.useBuildings}
+            onChange={(e) => actions.patch({ useBuildings: e.target.checked })}
+          />
+          <span>{t('field.buildings')}</span>
+        </label>
         <p className="hint">
           {groundNote}
           {state.groundOverride !== null ? (

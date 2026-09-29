@@ -3,7 +3,9 @@ import { createCelestialEngine } from '../../core/astronomy'
 import type { CelestialEngine } from '../../core/astronomy'
 import type { HorizonSample } from '../../core/types'
 import { computeSimulation, type SimCore, type SimInput } from './simulation'
-import { loadSampler, rayLeavesGrid, REFRACTION_K, ridgesAround, viewArcPoints } from './terrainService'
+import { loadBuildingSet, loadSampler, rayLeavesGrid, REFRACTION_K, ridgesAround, viewArcPoints } from './terrainService'
+import type { BuildingSet } from './terrainService'
+import { BuildingSurfaceSampler } from '../../core/terrain/composite'
 import { rayVisibility } from '../../core/terrain/horizon'
 import type { RidgeLine } from '../../core/terrain/ridges'
 import type { ElevationSampler } from '../../core/terrain/types'
@@ -21,6 +23,12 @@ export type TerrainStatus =
   | { readonly state: 'partial'; readonly resolution: number }
   | { readonly state: 'unavailable' }
 
+export type BuildingsStatus =
+  | { readonly state: 'off' }
+  | { readonly state: 'loading' }
+  | { readonly state: 'ready'; readonly count: number; readonly partial: boolean }
+  | { readonly state: 'unavailable' }
+
 export interface TargetVisibility {
   readonly visible: boolean
   /** True when terrain inside the excluded near-field radius would hide a target that is visible beyond it. */
@@ -28,6 +36,8 @@ export interface TargetVisibility {
   /** Target apparent altitude minus the highest terrain in front of it, degrees. */
   readonly margin: number
   readonly obstructionDistance?: number
+  /** What limits the view when hidden; 'building' only with the OSM buildings layer on. */
+  readonly obstructionKind?: 'terrain' | 'building'
 }
 
 export interface ViewRidge {
@@ -45,11 +55,14 @@ export interface Simulation {
   readonly targetVisibility: TargetVisibility | null
   readonly flatHorizonAltitude: number
   readonly terrain: TerrainStatus
+  readonly buildings: BuildingsStatus
 }
 
 export type SimParams = Omit<SimInput, 'engine'> & {
   /** Terrain within this horizontal distance of the camera is ignored, metres. */
   readonly nearFieldMeters: number
+  /** Include OSM buildings (OpenFreeMap) in skyline, ridgelines and landmark visibility. */
+  readonly useBuildings: boolean
 }
 
 const EARTH_R = 6_371_008.8
@@ -76,7 +89,7 @@ function publishHorizonDiagnostics(d: Record<string, unknown>): void {
 }
 
 /** Horizon terrain for the current camera/landmark: sampler cached, profile recomputed per pose (debounced). */
-function useHorizon(core: SimCore, hfov: number, nearField: number) {
+function useHorizon(core: SimCore, hfov: number, nearField: number, buildingsOn: boolean, cameraGround: number) {
   const camLat = core.camera.lat
   const camLon = core.camera.lon
   const camH = core.camera.height
@@ -107,9 +120,49 @@ function useHorizon(core: SimCore, hfov: number, nearField: number) {
     }
   }, [areaKey, camLat, camLon, tgtLat, tgtLon, az5, fovBucket, dist])
 
-  const sampler = loaded && loaded.key === areaKey ? loaded.sampler : null
+  const [bLoaded, setBLoaded] = useState<{ key: string; set: BuildingSet | null } | null>(null)
+  useEffect(() => {
+    if (!buildingsOn) return
+    let cancelled = false
+    const timer = setTimeout(() => {
+      const arc = viewArcPoints({ lat: camLat, lon: camLon }, az5, fovBucket / 2 + 1 + 2.5, dist + 3000)
+      void loadBuildingSet({ lat: camLat, lon: camLon }, { lat: tgtLat, lon: tgtLon }, arc, `${az5}|${fovBucket}|${Math.round(dist / 1000)}`).then(
+        (set) => {
+          if (!cancelled) setBLoaded({ key: areaKey, set })
+        },
+      )
+    }, DEBOUNCE_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [buildingsOn, areaKey, camLat, camLon, tgtLat, tgtLon, az5, fovBucket, dist])
+
+  const terrainSampler = loaded && loaded.key === areaKey ? loaded.sampler : null
+  const bset = buildingsOn && bLoaded && bLoaded.key === areaKey ? bLoaded.set : null
+  const buildingsStatus: BuildingsStatus = !buildingsOn
+    ? { state: 'off' }
+    : bLoaded && bLoaded.key === areaKey
+      ? bLoaded.set
+        ? { state: 'ready', count: bLoaded.set.count, partial: bLoaded.set.partial }
+        : { state: 'unavailable' }
+      : { state: 'loading' }
+  // Terrain + buildings surface; bare terrain inside the near-field radius is replaced by the camera's ground height.
+  const sampler = useMemo(
+    () =>
+      terrainSampler && bset
+        ? new BuildingSurfaceSampler(terrainSampler, bset.index, {
+            camera: { lat: camLat, lon: camLon },
+            cameraGround,
+            nearFieldMeters: nearField,
+          })
+        : terrainSampler,
+    [terrainSampler, bset, camLat, camLon, cameraGround, nearField],
+  )
+  // With buildings, the composite sampler applies the near-field rule itself (buildings stay in).
+  const coreNearField = bset ? 0 : nearField
   const poseAz = Math.round(core.pose.azimuth * 20) / 20
-  const profileKey = `${areaKey}|${poseAz}|${hfov.toFixed(3)}|${camH.toFixed(1)}|nf${nearField}`
+  const profileKey = `${areaKey}|${poseAz}|${hfov.toFixed(3)}|${camH.toFixed(1)}|nf${nearField}|b${bset ? bset.count : -1}|g${cameraGround.toFixed(1)}`
 
   useEffect(() => {
     if (!sampler) return
@@ -118,7 +171,7 @@ function useHorizon(core: SimCore, hfov: number, nearField: number) {
       if (cancelled) return
       try {
         const camera = { lat: deg(camLat), lon: deg(camLon), height: m(camH) }
-        const { skyline: raw, nearField: nearSamples, ridges } = ridgesAround(camera, sampler, poseAz, hfov, dist, nearField)
+        const { skyline: raw, nearField: nearSamples, ridges } = ridgesAround(camera, sampler, poseAz, hfov, dist, coreNearField)
         const maxD = dist + 3000
         const flat = seaDip(camH)
         let partial = false
@@ -128,7 +181,7 @@ function useHorizon(core: SimCore, hfov: number, nearField: number) {
           partial = true
           return { azimuth: h.azimuth, altitude: deg(flat) }
         })
-        publishHorizonDiagnostics({ state: 'ok', samples: samples.length, ridges: ridges.length, nearField, partial, resolution: sampler.resolutionMeters })
+        publishHorizonDiagnostics({ state: 'ok', samples: samples.length, ridges: ridges.length, nearField, partial, resolution: sampler.resolutionMeters, buildings: bset ? bset.count : 0, buildingsOn })
         if (!cancelled) setProfile({ key: profileKey, samples, nearSamples, ridges, partial })
       } catch (err) {
         // Never fail silently: an empty skyline must be explainable.
@@ -141,12 +194,12 @@ function useHorizon(core: SimCore, hfov: number, nearField: number) {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [sampler, profileKey, camLat, camLon, camH, poseAz, hfov, dist, nearField])
+  }, [sampler, profileKey, camLat, camLon, camH, poseAz, hfov, dist, coreNearField, nearField, bset, buildingsOn])
 
-  const res = sampler ? Math.round(sampler.resolutionMeters) : 0
+  const res = terrainSampler ? Math.round(terrainSampler.resolutionMeters) : 0
   const status: TerrainStatus =
     loaded && loaded.key === areaKey
-      ? sampler
+      ? terrainSampler
         ? profile?.partial
           ? { state: 'partial', resolution: res }
           : { state: 'ready', resolution: res }
@@ -156,7 +209,7 @@ function useHorizon(core: SimCore, hfov: number, nearField: number) {
   const samples = sampler && profile ? profile.samples : []
   const ridges = sampler && profile ? profile.ridges : []
   const nearSamples = sampler && profile ? profile.nearSamples : []
-  return { status, samples, nearSamples, ridges, sampler }
+  return { status, samples, nearSamples, ridges, sampler, buildingsStatus, buildingsActive: bset !== null }
 }
 
 export function useSimulation(p: SimParams): Simulation {
@@ -174,6 +227,7 @@ export function useSimulation(p: SimParams): Simulation {
     aim,
     cameraDef,
     nearFieldMeters,
+    useBuildings,
   } = p
   const timeMs = time.getTime()
   const core = useMemo(
@@ -207,7 +261,13 @@ export function useSimulation(p: SimParams): Simulation {
       cameraDef,
     ],
   )
-  const { status, samples, nearSamples, ridges: ridgeLines, sampler } = useHorizon(core, core.fov.horizontal, nearFieldMeters)
+  const { status, samples, nearSamples, ridges: ridgeLines, sampler, buildingsStatus, buildingsActive } = useHorizon(
+    core,
+    core.fov.horizontal,
+    nearFieldMeters,
+    useBuildings,
+    groundHeight,
+  )
   const ridges = useMemo(
     () =>
       ridgeLines.map((r) => ({
@@ -222,6 +282,7 @@ export function useSimulation(p: SimParams): Simulation {
   const tgtLat = core.targetPos.lat
   const tgtLon = core.targetPos.lon
   const tgtH = core.targetPos.height
+  const visNearField = buildingsActive ? 0 : nearFieldMeters
   const targetVisibility = useMemo((): TargetVisibility | null => {
     if (!sampler) return null
     try {
@@ -230,11 +291,11 @@ export function useSimulation(p: SimParams): Simulation {
         { lat: deg(tgtLat), lon: deg(tgtLon), height: m(tgtH) },
         sampler,
         REFRACTION_K,
-        nearFieldMeters,
+        visNearField,
       )
       const nearFieldBlocks =
         v.visible &&
-        nearFieldMeters > 0 &&
+        visNearField > 0 &&
         !rayVisibility(
           { lat: deg(camLat), lon: deg(camLon), height: m(camH) },
           { lat: deg(tgtLat), lon: deg(tgtLon), height: m(tgtH) },
@@ -245,13 +306,14 @@ export function useSimulation(p: SimParams): Simulation {
         visible: v.visible,
         margin: v.angularMargin,
         ...(v.obstructionDistance === undefined ? {} : { obstructionDistance: v.obstructionDistance }),
+        ...(v.obstructionKind === undefined ? {} : { obstructionKind: v.obstructionKind }),
         ...(nearFieldBlocks ? { nearFieldBlocks } : {}),
       }
     } catch (err) {
       console.error('[visibility] ray check failed', err)
       return null
     }
-  }, [sampler, camLat, camLon, camH, tgtLat, tgtLon, tgtH, nearFieldMeters])
+  }, [sampler, camLat, camLon, camH, tgtLat, tgtLon, tgtH, visNearField])
   const nearField = useMemo(
     () => nearSamples.map((n) => ({ azimuth: n.azimuth as number, altitude: n.altitude as number })),
     [nearSamples],
@@ -268,5 +330,6 @@ export function useSimulation(p: SimParams): Simulation {
     targetVisibility,
     flatHorizonAltitude: seaDip(core.camera.height),
     terrain: status,
+    buildings: buildingsStatus,
   }
 }

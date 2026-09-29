@@ -6,6 +6,7 @@ import {
   Map as MapLibreMap,
   Marker,
   NavigationControl,
+  Popup,
   setWorkerUrl,
   type GeoJSONSource,
 } from 'maplibre-gl'
@@ -45,6 +46,71 @@ export interface MapViewProps {
   readonly onSelectSpot: (id: string) => void
   readonly onMoveCamera: (lat: number, lon: number) => void
   readonly onMoveLandmark: (lat: number, lon: number) => void
+  /** Fan-search cells (polygons with props i, color, opacity, h) and the fan's edge rays; null hides them. */
+  readonly sectorCells?: FeatureCollection | null
+  readonly sectorEdges?: FeatureCollection | null
+  /** Hover text for cell `i` (lines); click on a cell calls onSectorPick(i). */
+  readonly sectorPopupLines?: (i: number) => readonly string[]
+  readonly onSectorPick?: (i: number) => void
+}
+
+/** Fan-search layers, added first so markers and alignment lines draw above them. */
+function ensureSectorLayers(map: MapLibreMap): void {
+  const empty: FeatureCollection = { type: 'FeatureCollection', features: [] }
+  for (const id of ['sectors', 'sector-edges']) {
+    if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: empty as never })
+  }
+  const visible = ['==', ['get', 'h'], 0] as never
+  const hidden = ['==', ['get', 'h'], 1] as never
+  if (!map.getLayer('sector-fill')) {
+    map.addLayer({
+      id: 'sector-fill',
+      type: 'fill',
+      source: 'sectors',
+      filter: visible,
+      paint: { 'fill-color': ['get', 'color'] as never, 'fill-opacity': ['get', 'opacity'] as never },
+    })
+  }
+  if (!map.getLayer('sector-line')) {
+    map.addLayer({
+      id: 'sector-line',
+      type: 'line',
+      source: 'sectors',
+      filter: visible,
+      paint: { 'line-color': ['get', 'color'] as never, 'line-width': 1, 'line-opacity': 0.9 },
+    })
+  }
+  if (!map.getLayer('sector-line-hidden')) {
+    map.addLayer({
+      id: 'sector-line-hidden',
+      type: 'line',
+      source: 'sectors',
+      filter: hidden,
+      paint: {
+        'line-color': ['get', 'color'] as never,
+        'line-width': 1,
+        'line-opacity': 0.9,
+        'line-dasharray': [2, 2],
+      },
+    })
+  }
+  if (!map.getLayer('sector-edges')) {
+    map.addLayer({
+      id: 'sector-edges',
+      type: 'line',
+      source: 'sector-edges',
+      paint: { 'line-color': '#8b949e', 'line-width': 1, 'line-opacity': 0.9 },
+    })
+  }
+  // Near-transparent layer over every cell (including blocked ones, which have no fill) for hover and click.
+  if (!map.getLayer('sector-hit')) {
+    map.addLayer({
+      id: 'sector-hit',
+      type: 'fill',
+      source: 'sectors',
+      paint: { 'fill-color': '#000000', 'fill-opacity': 0.01 },
+    })
+  }
 }
 
 function makeMarker(kind: 'camera' | 'landmark', label: string): HTMLDivElement {
@@ -119,6 +185,7 @@ export default function MapView(props: MapViewProps) {
     })
 
     const ensureLayers = () => {
+      ensureSectorLayers(map)
       const empty: FeatureCollection = { type: 'FeatureCollection', features: [] }
       for (const id of ['los', 'spots', 'aligns', 'align-labels']) {
         if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: empty as never })
@@ -196,6 +263,9 @@ export default function MapView(props: MapViewProps) {
       setData(map, 'spots', spotsCollection(q.spots, q.selectedSpotId))
       setData(map, 'aligns', alignLinesCollection(q.lines))
       setData(map, 'align-labels', alignLabelsCollection(q.lines))
+      const none: FeatureCollection = { type: 'FeatureCollection', features: [] }
+      setData(map, 'sectors', q.sectorCells ?? none)
+      setData(map, 'sector-edges', q.sectorEdges ?? none)
     }
 
     let fellBack = false
@@ -212,7 +282,50 @@ export default function MapView(props: MapViewProps) {
         map.setStyle(STYLE_FALLBACK)
       }
     })
+    const popup = new Popup({ closeButton: false, closeOnClick: false, maxWidth: '280px', className: 'sector-popup' })
+    const cellAt = (point: { x: number; y: number }): number | null => {
+      if (!map.getLayer('sector-hit')) return null
+      const i = map.queryRenderedFeatures([point.x, point.y] as [number, number], { layers: ['sector-hit'] })[0]
+        ?.properties?.['i']
+      return typeof i === 'number' ? i : null
+    }
+    let shown: number | null = null
+    map.on('mousemove', (e) => {
+      const i = cellAt(e.point)
+      const lines = i === null ? undefined : latest.current.sectorPopupLines?.(i)
+      if (!lines || lines.length === 0) {
+        popup.remove()
+        shown = null
+        map.getCanvas().style.cursor = 'crosshair'
+        return
+      }
+      if (i === shown) {
+        popup.setLngLat(e.lngLat)
+        return
+      }
+      shown = i
+      const box = document.createElement('div')
+      lines.forEach((text, n) => {
+        const row = document.createElement('div')
+        row.textContent = text
+        if (n === 0) row.style.fontWeight = '600'
+        box.appendChild(row)
+      })
+      popup.setLngLat(e.lngLat).setDOMContent(box).addTo(map)
+      map.getCanvas().style.cursor = 'pointer'
+    })
+    map.getCanvas().addEventListener('mouseleave', () => {
+      popup.remove()
+      shown = null
+    })
     map.on('click', (e) => {
+      const cell = cellAt(e.point)
+      if (cell !== null && latest.current.onSectorPick) {
+        popup.remove()
+        shown = null
+        latest.current.onSectorPick(cell)
+        return
+      }
       if (map.getLayer('spots')) {
         const hit = map.queryRenderedFeatures(
           [
@@ -236,6 +349,7 @@ export default function MapView(props: MapViewProps) {
 
     return () => {
       ro.disconnect()
+      popup.remove()
       cam.remove()
       lm.remove()
       map.remove()
@@ -247,10 +361,22 @@ export default function MapView(props: MapViewProps) {
   }, [])
 
   // ---- data updates
-  const { camera, landmark, spots, selectedSpotId, lines, cameraLabel, landmarkLabel } = props
+  const { camera, landmark, spots, selectedSpotId, lines, cameraLabel, landmarkLabel, sectorCells, sectorEdges } = props
   useEffect(() => {
     apply.current()
-  }, [camera.lat, camera.lon, landmark.lat, landmark.lon, spots, selectedSpotId, lines, cameraLabel, landmarkLabel])
+  }, [
+    camera.lat,
+    camera.lon,
+    landmark.lat,
+    landmark.lon,
+    spots,
+    selectedSpotId,
+    lines,
+    cameraLabel,
+    landmarkLabel,
+    sectorCells,
+    sectorEdges,
+  ])
 
   // ---- re-frame on selection changes (not on plain map clicks)
   useEffect(() => {

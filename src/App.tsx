@@ -1,121 +1,127 @@
 import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { LANGS, LINKS, makeTranslate, type Lang } from './app/i18n'
+import { PHASES, TOTAL_PHASES, currentPhase } from './app/status'
+import { FOCAL_MAX_MM, FOCAL_MIN_MM, useFov } from './app/useFov'
+import { CAMERA_PRESETS } from './data/cameraPresets'
+
+const fmt = (n: number, digits: number) => n.toFixed(digits)
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [lang, setLang] = useState<Lang>('en')
+  const t = makeTranslate(lang)
+  const cur = currentPhase()
+  const { presetId, setPresetId, focalText, setFocalText, result } = useFov()
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
+    <div className="page" lang={lang}>
+      <header className="header">
         <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
+          <h1>{t('app.title')}</h1>
+          <p className="tagline">{t('app.tagline')}</p>
+        </div>
+        <div className="lang" role="group" aria-label={t('lang.label')}>
+          {LANGS.map((l) => (
+            <button
+              key={l.id}
+              type="button"
+              aria-pressed={lang === l.id}
+              onClick={() => setLang(l.id)}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <main>
+        <section className="panel" aria-labelledby="status-h">
+          <h2 id="status-h">{t('status.heading')}</h2>
+          <p className="status-line">
+            {t('status.line', {
+              phase: cur.id,
+              total: TOTAL_PHASES,
+              name: t(cur.nameKey as never),
+            })}
           </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+          <ol className="phases">
+            {PHASES.map((p) => (
+              <li key={p.id} className={`phase phase-${p.state}`}>
+                <span className="num">{p.id}</span>
+                <span className="name">{t(p.nameKey as never)}</span>
+                <span className="state">{t(`state.${p.state}`)}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
 
-      <div className="ticks"></div>
+        <section className="panel" aria-labelledby="fov-h">
+          <h2 id="fov-h">{t('fov.heading')}</h2>
+          <div className="fields">
+            <label>
+              <span>{t('fov.camera')}</span>
+              <select value={presetId} onChange={(e) => setPresetId(e.target.value)}>
+                {CAMERA_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{t('fov.focal')}</span>
+              <input
+                className="mono"
+                type="number"
+                inputMode="decimal"
+                min={FOCAL_MIN_MM}
+                max={FOCAL_MAX_MM}
+                step="any"
+                value={focalText}
+                onChange={(e) => setFocalText(e.target.value)}
+              />
+              <small>{t('fov.range')}</small>
+            </label>
+          </div>
+          {result ? (
+            <dl className="readout">
+              <div>
+                <dt>{t('fov.horizontal')}</dt>
+                <dd className="mono">{fmt(result.fov.horizontal, 3)}°</dd>
+              </div>
+              <div>
+                <dt>{t('fov.vertical')}</dt>
+                <dd className="mono">{fmt(result.fov.vertical, 3)}°</dd>
+              </div>
+              <div>
+                <dt>{t('fov.diagonal')}</dt>
+                <dd className="mono">{fmt(result.fov.diagonal, 3)}°</dd>
+              </div>
+              <div>
+                <dt>{t('fov.moon')}</dt>
+                <dd className="mono">{t('fov.moonValue', { pct: fmt(result.moonPercent, 1) })}</dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="warn" role="alert">
+              {t('fov.invalid')}
+            </p>
+          )}
+          <p className="note">{t('fov.note')}</p>
+        </section>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
+        <section className="panel" aria-labelledby="links-h">
+          <h2 id="links-h">{t('links.heading')}</h2>
+          <ul className="links">
+            <li><a href={LINKS.repo}>{t('links.repo')}</a></li>
+            <li><a href={LINKS.docs[lang]}>{t('links.docs')}</a></li>
+            <li><a href={LINKS.license}>{t('links.license')}</a></li>
+            <li><a href={LINKS.attributions}>{t('links.attributions')}</a></li>
           </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        </section>
+      </main>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+      <footer className="footer">{t('footer.text')}</footer>
+    </div>
   )
 }
 

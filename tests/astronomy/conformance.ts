@@ -11,7 +11,11 @@ import type { CelestialBody } from '../../src/core/types'
 import { deg, m } from '../../src/core/units'
 
 export interface Tolerances {
-  /** Max |azimuth error| in degrees, evaluated where altitude < 85°. */
+  /**
+   * Max azimuth error in degrees of sky arc, i.e. |Δaz|·cos(alt), over |alt| < 85°.
+   * In the horizon band (the part that matters for alignment) cos(alt) ≈ 1, and the raw
+   * |Δaz| there is also asserted against the same tolerance.
+   */
   readonly azimuthDeg: Record<CelestialBody, number>
   /** Max |geometric altitude error| in degrees. */
   readonly altitudeDeg: Record<CelestialBody, number>
@@ -26,6 +30,10 @@ interface Stats {
   maxAlt: number
   maxDistRel: number
   n: number
+  /** Photographically relevant band: geometric altitude −2°…+15° (rise/set, low Moon). */
+  horizonMaxAz: number
+  horizonMaxAlt: number
+  horizonN: number
 }
 
 const sites = new Map<string, Observer>(
@@ -44,12 +52,20 @@ function azErr(a: number, b: number): number {
 }
 
 export function measurePositions(engine: CelestialEngine, body: CelestialBody): Stats {
-  const s: Stats = { maxAz: 0, maxAlt: 0, maxDistRel: 0, n: 0 }
+  const s: Stats = { maxAz: 0, maxAlt: 0, maxDistRel: 0, n: 0, horizonMaxAz: 0, horizonMaxAlt: 0, horizonN: 0 }
   for (const row of fixture.positions) {
     if (row.body !== body) continue
     const p = engine.getPosition(body, new Date(row.utc), site(row.site))
-    if (row.altitudeAirless < 85) s.maxAz = Math.max(s.maxAz, azErr(p.azimuth, row.azimuth))
-    s.maxAlt = Math.max(s.maxAlt, Math.abs(p.altitude - row.altitudeAirless))
+    const az = azErr(p.azimuth, row.azimuth)
+    const alt = Math.abs(p.altitude - row.altitudeAirless)
+    const azArc = az * Math.cos((row.altitudeAirless * Math.PI) / 180)
+    if (Math.abs(row.altitudeAirless) < 85) s.maxAz = Math.max(s.maxAz, azArc)
+    s.maxAlt = Math.max(s.maxAlt, alt)
+    if (row.altitudeAirless >= -2 && row.altitudeAirless <= 15) {
+      s.horizonMaxAz = Math.max(s.horizonMaxAz, az)
+      s.horizonMaxAlt = Math.max(s.horizonMaxAlt, alt)
+      s.horizonN++
+    }
     s.maxDistRel = Math.max(s.maxDistRel, Math.abs(p.distanceKm - row.distanceKm) / row.distanceKm)
     s.n++
   }
@@ -83,10 +99,13 @@ export function describeConformance(engine: CelestialEngine, tol: Tolerances): v
       it(`${body} positions`, () => {
         const s = measurePositions(engine, body)
         console.info(
-          `[${engine.id}] ${body}: n=${s.n} maxAz=${s.maxAz.toFixed(5)}° maxAlt=${s.maxAlt.toFixed(5)}° maxDistRel=${s.maxDistRel.toExponential(2)}`,
+          `[${engine.id}] ${body}: n=${s.n} maxAzArc=${s.maxAz.toFixed(5)}° maxAlt=${s.maxAlt.toFixed(5)}° maxDistRel=${s.maxDistRel.toExponential(2)} | horizon band n=${s.horizonN} maxAz=${s.horizonMaxAz.toFixed(5)}° maxAlt=${s.horizonMaxAlt.toFixed(5)}°`,
         )
         expect(s.n).toBeGreaterThan(100)
+        expect(s.horizonN).toBeGreaterThan(20)
         expect(s.maxAz).toBeLessThanOrEqual(tol.azimuthDeg[body])
+        expect(s.horizonMaxAz).toBeLessThanOrEqual(tol.azimuthDeg[body])
+        expect(s.horizonMaxAlt).toBeLessThanOrEqual(tol.altitudeDeg[body])
         expect(s.maxAlt).toBeLessThanOrEqual(tol.altitudeDeg[body])
         expect(s.maxDistRel).toBeLessThanOrEqual(tol.distanceRel[body])
       })

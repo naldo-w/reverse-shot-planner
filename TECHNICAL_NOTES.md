@@ -2,7 +2,20 @@
 
 Uncertainties are recorded here as they are found. Each item says what is known, what is not, and when it will be resolved.
 
-## 1. Astronomy accuracy (HIGH risk, resolve in Phase 2)
+## 1. Astronomy accuracy (RESOLVED in Phase 2)
+
+**Resolution.** Both engines were measured against JPL DE421 via Skyfield (fixtures in `tests/fixtures/ephemeris.json`, 5 sites from −34° to +70° latitude, 3 seasons). Max errors, geometric topocentric:
+
+| Engine | Sun az·cos(alt) / alt | Moon az·cos(alt) / alt | Sun events | Moon events |
+|---|---|---|---|---|
+| astronomy-engine 2.1.19 | 0.0007° / 0.0007° | 0.0017° / 0.0017° | 2.0 s | 1.3 s |
+| SunCalc 2.0.2 | 0.0077° / 0.0100° | 0.0070° / 0.0135° | 4.2 s | 10.4 s |
+
+astronomy-engine is the default (10k Moon positions ≈ 150 ms). The skyfield generator itself agrees with a JPL Horizons point to 1.6″.
+
+Azimuth error is measured as |Δaz|·cos(alt) over |alt| < 85°: raw azimuth is ill-conditioned near zenith/nadir (an early suite version reported a 0.42° "error" at alt −89.4°). In the −2°…+15° horizon band raw |Δaz| is asserted too.
+
+Original analysis:
 
 SunCalc **2.x** differs from 1.x: angles are degrees, azimuth is north-based clockwise (1.x: radians, south-based). Any 1.x snippet copied from the web will be wrong by 180°.
 
@@ -41,8 +54,12 @@ Coefficient k varies 0.07–0.25 by day/night and inversions, and is large over 
 
 The orchestrator's original 400 mm FOV expectations were wrong (5.1550°/6.1924°); exact values are H 5.1531°, D 6.1915° (2·atan(18/400), 2·atan(21.633/400)). Tests use the exact values. The Flinders→Buninyong final azimuth reference is 307°10′25.07″ (forward convention).
 
-## 9. Reference ephemeris access (Phase 2 prep)
+## 9. Reference ephemeris access (superseded — see §1)
 
 - The workspace shell cannot reach `ssd.jpl.nasa.gov` (network allowlist). Horizons is reachable through the WebFetch tool, but WebFetch caches/collapses query strings: six different queries returned identical rows. Only the first response is trusted.
 - Trusted point — Moon, topocentric airless, site 114.18°E 22.35°N h=0, 2026-10-06 06:00 UT: Horizons az 281.247717°, el 15.734218°. SunCalc 2.0.2 gives az 281.244°, apparent el 15.800° (≈ airless + 0.06° refraction, as expected at 15.8°). Azimuth agrees to 0.004°.
-- Plan: generate fixtures offline on a machine with Horizons access (script in Phase 2), commit them as JSON, and additionally cross-check against `astronomy-engine` 2.1.19 (MIT) in tests.
+- Resolved differently, per the owner's request for open-source data: fixtures are generated offline with Skyfield (MIT) and the DE421 kernel shipped in the `skyfield-data` PyPI package (the `de421` PyPI package's installer is broken on current setuptools and holds an obsolete .npy format). Reproduce: `pip install skyfield==1.55 skyfield-data==7.0.0 && python3 scripts/ephemeris/generate_fixtures.py`.
+
+## 10. astronomy-engine rise/set and observer height
+
+`SearchRiseSet` derives horizon dip and air density from observer height. The contract defines events on a sea-level astronomical horizon, so the adapter searches with height 0; positions still use the real height. Terrain horizons belong to the visibility engine (Phase 4).

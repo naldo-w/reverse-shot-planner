@@ -13,7 +13,9 @@ The repository was empty, so the spec's default stack was adopted. Nothing was r
 | Build | Vite | 8.3 | MIT |
 | UI | React | 19.3 | MIT |
 | Map renderer | MapLibre GL JS (Phase 6) | 6.11 | BSD-3-Clause |
-| Astronomy | SunCalc, wrapped (Phase 2) | 2.0.2 | BSD-2-Clause |
+| Astronomy (default) | astronomy-engine, wrapped | 2.1.19 | MIT |
+| Astronomy (alternative) | SunCalc, wrapped | 2.0.2 | BSD-2-Clause |
+| Reference ephemeris (tests only) | Skyfield + JPL DE421 via skyfield-data (Python, offline) | 1.55 / 7.0.0 | MIT / public domain |
 | Tests | Vitest | 5.0 | MIT |
 | Lint | oxlint (shipped with the Vite template; kept rather than adding ESLint) | 1.86 | MIT |
 
@@ -46,7 +48,7 @@ Scripts: `npm run verify` = typecheck → lint → test. Every phase must pass i
 Rules:
 
 1. `core/` never imports React, MapLibre, SunCalc, `fetch`, or a concrete provider. It is testable in plain Node.
-2. SunCalc is imported in exactly one file (`core/astronomy/suncalcEngine.ts`, Phase 2) behind `CelestialEngine`.
+2. Astronomy libraries are imported only inside `core/astronomy/engines/`, behind `CelestialEngine`; application code imports `core/astronomy/index.ts`.
 3. Providers implement interfaces declared in `core/`; the UI selects a provider, the engine receives it.
 4. Anything O(candidates × dates) runs in a Worker. The main thread renders and nothing else.
 5. Mock/demo data is only available through explicitly named `Mock*` providers, and results carry the provider metadata so the UI can label them.
@@ -75,11 +77,16 @@ Defined in `src/core/units.ts`, `types.ts`, `wgs84.ts`.
 | `core/camera/fov.ts` | H/V/diagonal FOV, crop, inverse focal length |
 | `core/camera/projection.ts` | Exact gnomonic projection direction ↔ normalised sensor coordinates, with roll |
 | `data/cameraPresets.ts` | Sensor presets (data only; the engine does not depend on them) |
+| `core/astronomy/types.ts` | `CelestialEngine` contract: geometric (airless) topocentric positions, upper-limb rise/set events, Moon phase |
+| `core/astronomy/refraction.ts` | Bennett refraction with temperature/pressure — applied explicitly, never inside engines |
+| `core/astronomy/engines/*` | `AstronomyEngineEngine` (default), `SuncalcEngine` |
+| `core/astronomy/index.ts` | Engine factory and convenience wrappers |
+| `tests/astronomy/conformance.ts` | Shared accuracy suite every engine must pass against DE421 fixtures |
 
 ## Planned engine interfaces
 
 ```ts
-interface CelestialEngine { getSunPosition; getMoonPosition; getSunEvents; getMoonEvents }   // Phase 2
+interface CelestialEngine { getPosition(body, t, obs); findEvents(body, obs, start, end); getMoonPhase(t) }   // Phase 2 ✅
 interface TerrainProvider { getElevation; getElevationGrid; getTile; getMetadata }           // Phase 3
 interface Geocoder { search(query): Promise<PlaceResult[]> }                                  // Phase 6
 castRay(camera, target, terrain): VisibilityResult                                            // Phase 4

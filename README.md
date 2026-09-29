@@ -6,7 +6,9 @@
 
 A target-first planner: pick a landmark, choose Sun or Moon and a composition, and it searches the surrounding terrain and a date range for camera positions and times where that shot is geometrically possible. Open-source first — MapLibre, OpenStreetMap, open DEMs, no proprietary map services.
 
-**Status:** Phase 1 of 8 — geometry core (angles, geodesy, ECEF/ENU, camera FOV & projection) complete and tested. No UI yet.
+**Status:** Phases 0–2 of 8 complete — geometry core and astronomy engine (validated against JPL DE421 to ≤0.002°). Next: terrain. No map UI yet.
+
+**Live page:** https://naldo-w.github.io/reverse-shot-planner/ (project status + a working lens FOV calculator)
 
 ```bash
 npm install

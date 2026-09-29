@@ -12,15 +12,17 @@ Each phase ends with `npm run verify` green and a commit. Failing tests are fixe
 - Angles, geodesy, ECEF/ENU, camera FOV & gnomonic projection, camera presets.
 - 114 tests incl. published references (Vincenty's Flinders Peak → Buninyong) and cross-module consistency tests (`tests/geometry.integration.test.ts`).
 
-## Phase 2 — Astronomy (next)
-Acceptance:
+## Phase 2 — Astronomy ✅
+Result: `CelestialEngine` with two adapters, both passing the shared conformance suite against 2,400 positions and 220 rise/set events generated from JPL DE421 with Skyfield (`scripts/ephemeris/`). Default: astronomy-engine (≤0.002°, ≤2 s). SunCalc: ≤0.014°, ≤11 s. Horizon-band accuracy is reported separately.
+
+Original acceptance:
 - `CelestialEngine` interface + `SuncalcEngine` adapter; SunCalc imported nowhere else.
 - Sun/Moon position, rise/set events, Moon illumination, angular diameter from distance.
 - Events computed for a **local** calendar day (SunCalc's moon times use the UTC day; HK is UTC+8).
 - Reference fixtures from JPL Horizons (topocentric, airless *and* refracted) for Hong Kong and one high-latitude site, several dates across 2026–2027. Target tolerance: Sun ≤ 0.02°, Moon ≤ 0.05°. If SunCalc's Moon fails, add an `AstronomyEngineEngine` adapter (astronomy-engine, MIT) and make it the default — see TECHNICAL_NOTES §1.
 - Expose both geometric (airless) and apparent altitude so the alignment model can apply one consistent refraction policy.
 
-## Phase 3 — Terrain
+## Phase 3 — Terrain (next)
 - `TerrainProvider` interface, `TerrainMetadata` (DTM/DSM, resolution, datum).
 - First real provider: Copernicus GLO-30 via public cloud-optimised GeoTIFF tiles (no key) — confirm access/licence in Phase 3 kickoff; fallback: AWS Terrain Tiles (Terrarium PNG, Mapzen/Joerd, open licence).
 - Bilinear elevation sampling on typed arrays; `MockTerrainProvider` with analytic surfaces (plane, cone hill, ridge, wall).

@@ -8,7 +8,8 @@ Every external dependency and data source used by Reverse Shot Planner. Update t
 |---|---|---|---|
 | React / React DOM | UI | MIT | https://github.com/facebook/react |
 | MapLibre GL JS | Map renderer (Phase 6) | BSD-3-Clause | https://github.com/maplibre/maplibre-gl-js |
-| SunCalc | Sun/Moon positions & events, wrapped behind `CelestialEngine` | BSD-2-Clause, © Volodymyr Agafonkin | https://github.com/mourner/suncalc |
+| astronomy-engine | Default Sun/Moon engine, wrapped behind `CelestialEngine` | MIT, © Don Cross | https://github.com/cosinekitty/astronomy |
+| SunCalc | Alternative Sun/Moon engine, wrapped behind `CelestialEngine` | BSD-2-Clause, © Volodymyr Agafonkin | https://github.com/mourner/suncalc |
 
 ## Development tools
 
@@ -18,6 +19,8 @@ Every external dependency and data source used by Reverse Shot Planner. Update t
 | Vite, @vitejs/plugin-react | MIT |
 | Vitest | MIT |
 | oxlint | MIT |
+| Skyfield (Python, fixture generation only) | MIT |
+| skyfield-data (Python, fixture generation only) | MIT |
 
 ## Algorithms (independently implemented)
 
@@ -25,6 +28,14 @@ Every external dependency and data source used by Reverse Shot Planner. Update t
 - Bowring, B. R. (1976). Transformation from spatial to geographical coordinates. Survey Review 23(181).
 - WGS84 parameters: NIMA TR8350.2.
 - Meeus, J. *Astronomical Algorithms* (refraction and parallax formulas, via SunCalc).
+- Bennett, G. G. (1982). The calculation of astronomical refraction in marine navigation. J. Navigation 35(2) — refraction model.
+
+## Reference data (tests only)
+
+| Source | Use | License |
+|---|---|---|
+| JPL DE421 planetary ephemeris (NASA/JPL), via skyfield-data | Generates `tests/fixtures/ephemeris.json` | Public domain (US Government work) |
+| IERS Earth orientation data (finals2000A), via skyfield-data | Time scales for fixtures | IERS, free use with attribution |
 
 ## Data sources (planned — not yet in use)
 
